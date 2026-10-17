@@ -1,13 +1,8 @@
 const { Module } = require("../main");
 const fs = require("fs");
 const path = require("path");
-const {
-  downloadVideo,
-  downloadAudio,
-  searchYoutube,
-  getVideoInfo,
-  convertM4aToMp3,
-} = require("./utils/yt");
+const { exec } = require("child_process");
+const axios = require("axios");
 const { spotifyTrack } = require("./utils/misc");
 
 const config = require("../config");
@@ -15,6 +10,162 @@ const MODE = config.MODE;
 const fromMe = MODE === "public" ? false : true;
 
 const VIDEO_SIZE_LIMIT = 150 * 1024 * 1024;
+
+// Shell command executor for local VPS engine
+function runCmd(cmd) {
+  return new Promise((resolve, reject) => {
+    exec(cmd, { maxBuffer: 1024 * 1024 * 100 }, (error, stdout, stderr) => {
+      if (error) return reject(stderr || error.message);
+      resolve(stdout);
+    });
+  });
+}
+
+// 1. VPS Local Audio Downloader (yt-dlp)
+async function downloadAudio(url) {
+  const timestamp = Date.now();
+  let title = "YouTube Audio";
+  let channel = "YouTube";
+  let thumbnail = "";
+
+  try {
+    const rawMeta = await runCmd(`yt-dlp -J --no-playlist "${url}"`);
+    const meta = JSON.parse(rawMeta);
+    title = meta.title || title;
+    channel = meta.uploader || meta.channel || channel;
+    thumbnail = meta.thumbnail || "";
+  } catch (e) {
+    title = `audio_${timestamp}`;
+  }
+
+  const outTemplate = path.join("/tmp", `yt_aud_${timestamp}.%(ext)s`);
+  await runCmd(`yt-dlp -x --audio-format mp3 --audio-quality 0 --no-playlist -o "${outTemplate}" "${url}"`);
+
+  const files = fs.readdirSync("/tmp").filter((f) => f.startsWith(`yt_aud_${timestamp}`));
+  if (files.length === 0) throw new Error("Audio download failed");
+  const finalPath = path.join("/tmp", files[0]);
+
+  return {
+    path: finalPath,
+    title: title,
+    info: {
+      channel: { name: channel },
+      thumbnail: thumbnail,
+    },
+  };
+}
+
+// 2. VPS Local Video Downloader (yt-dlp)
+async function downloadVideo(url, quality = "360p") {
+  const timestamp = Date.now();
+  let title = "YouTube Video";
+
+  try {
+    const rawMeta = await runCmd(`yt-dlp -J --no-playlist "${url}"`);
+    const meta = JSON.parse(rawMeta);
+    title = meta.title || title;
+  } catch (e) {
+    title = `video_${timestamp}`;
+  }
+
+  const res = parseInt(quality) || 360;
+  const outTemplate = path.join("/tmp", `yt_vid_${timestamp}.%(ext)s`);
+  const formatSelector = `bv*[height<=${res}][ext=mp4]+ba*[ext=m4a]/b[height<=${res}][ext=mp4]/bv*+ba/b`;
+
+  await runCmd(`yt-dlp -f "${formatSelector}" --merge-output-format mp4 --no-playlist -o "${outTemplate}" "${url}"`);
+
+  const files = fs.readdirSync("/tmp").filter((f) => f.startsWith(`yt_vid_${timestamp}`));
+  if (files.length === 0) throw new Error("Video download failed");
+  const finalPath = path.join("/tmp", files[0]);
+
+  return {
+    path: finalPath,
+    title: title,
+  };
+}
+
+// 3. Audio Post-Processor
+async function convertM4aToMp3(filePath) {
+  return filePath;
+}
+
+// 4. Video Quality & Info Fetcher (yt-dlp)
+async function getVideoInfo(url) {
+  const rawMeta = await runCmd(`yt-dlp -J --no-playlist "${url}"`);
+  const meta = JSON.parse(rawMeta);
+
+  const formats = [];
+  if (meta.formats) {
+    meta.formats.forEach((f) => {
+      const hasVideo = f.vcodec && f.vcodec !== "none";
+      const hasAudio = f.acodec && f.acodec !== "none";
+      const sizeStr = f.filesize
+        ? `${(f.filesize / (1024 * 1024)).toFixed(1)} MB`
+        : f.filesize_approx
+        ? `${(f.filesize_approx / (1024 * 1024)).toFixed(1)} MB`
+        : "15 MB";
+
+      if (hasVideo && f.height) {
+        formats.push({
+          type: "video",
+          quality: `${f.height}p`,
+          size: sizeStr,
+        });
+      } else if (hasAudio && !hasVideo) {
+        formats.push({
+          type: "audio",
+          quality: "audio",
+          size: sizeStr,
+        });
+      }
+    });
+  }
+
+  if (!formats.some((f) => f.type === "video")) {
+    formats.push({ type: "video", quality: "360p", size: "15 MB" });
+    formats.push({ type: "video", quality: "720p", size: "35 MB" });
+  }
+  if (!formats.some((f) => f.type === "audio")) {
+    formats.push({ type: "audio", quality: "audio", size: "5 MB" });
+  }
+
+  return {
+    title: meta.title || "YouTube Video",
+    videoId: meta.id || "",
+    formats: formats,
+  };
+}
+
+// 5. Search YouTube Helper
+let searchYoutubeOriginal;
+try {
+  searchYoutubeOriginal = require("./utils/yt").searchYoutube;
+} catch (e) {}
+
+async function searchYoutube(query, limit = 10) {
+  if (searchYoutubeOriginal) {
+    try {
+      const res = await searchYoutubeOriginal(query, limit);
+      if (res && res.length > 0) return res;
+    } catch (e) {}
+  }
+
+  try {
+    const yts = require("yt-search");
+    const s = await yts(query);
+    return (s.videos || []).slice(0, limit).map((v) => ({
+      title: v.title,
+      duration: v.timestamp,
+      views: v.views,
+      channel: { name: v.author?.name || "YouTube" },
+      url: v.url,
+      thumbnail: v.thumbnail,
+      uploadedAt: v.ago,
+    }));
+  } catch (err) {
+    return [];
+  }
+}
 
 function formatBytes(bytes) {
   if (bytes === 0) return "0 B";
@@ -33,6 +184,9 @@ function formatViews(views) {
   return views?.toString() || "N/A";
 }
 
+// ==========================================
+// 1. SONG COMMAND
+// ==========================================
 Module(
   {
     pattern: "song ?(.*)",
@@ -82,6 +236,9 @@ Module(
   }
 );
 
+// ==========================================
+// 2. YTS COMMAND
+// ==========================================
 Module(
   {
     pattern: "yts ?(.*)",
@@ -131,6 +288,9 @@ Module(
   }
 );
 
+// ==========================================
+// 3. YTV COMMAND
+// ==========================================
 Module(
   {
     pattern: "ytv ?(.*)",
@@ -152,7 +312,6 @@ Module(
       );
     }
 
-    // Convert YouTube Shorts URL to regular watch URL if needed
     if (url.includes("youtube.com/shorts/")) {
       const shortId = url.match(/youtube\.com\/shorts\/([A-Za-z0-9_-]+)/)?.[1];
       if (shortId) {
@@ -168,8 +327,8 @@ Module(
         .filter((f) => f.type === "video" && f.quality)
         .sort((a, b) => {
           const getRes = (q) => {
-            const match = q.match(/(\d+)/);
-            return match ? parseInt(match[1]) : 0;
+            const m = q.match(/(\d+)/);
+            return m ? parseInt(m[1]) : 0;
           };
           return getRes(b.quality) - getRes(a.quality);
         });
@@ -194,58 +353,11 @@ Module(
 
       uniqueQualities.forEach((quality, index) => {
         const format = videoFormats.find((f) => f.quality === quality);
-        const audioFormat = info.formats.find((f) => f.type === "audio");
-
-        let sizeInfo = "";
-        if (format.size && audioFormat?.size) {
-          // Parse sizes and estimate total
-          const parseSize = (sizeStr) => {
-            const match = sizeStr.match(/([\d.]+)\s*(KB|MB|GB)/i);
-            if (!match) return 0;
-            const value = parseFloat(match[1]);
-            const unit = match[2].toUpperCase();
-            if (unit === "KB") return value * 1024;
-            if (unit === "MB") return value * 1024 * 1024;
-            if (unit === "GB") return value * 1024 * 1024 * 1024;
-            return value;
-          };
-
-          const videoSize = parseSize(format.size);
-          const audioSize = parseSize(audioFormat.size);
-          const totalSize = videoSize + audioSize;
-
-          if (totalSize > 0) {
-            sizeInfo = ` ~ _${formatBytes(totalSize)}_`;
-          }
-        }
-
-        qualityText += `*${index + 1}.* _*${quality}*_${sizeInfo}\n`;
+        qualityText += `*${index + 1}.* _*${quality}*_${format?.size ? ` ~ _${format.size}_` : ""}\n`;
       });
 
       const audioFormat = info.formats.find((f) => f.type === "audio");
-      if (audioFormat) {
-        let audioSizeInfo = "";
-        if (audioFormat.size) {
-          const parseSize = (sizeStr) => {
-            const match = sizeStr.match(/([\d.]+)\s*(KB|MB|GB)/i);
-            if (!match) return 0;
-            const value = parseFloat(match[1]);
-            const unit = match[2].toUpperCase();
-            if (unit === "KB") return value * 1024;
-            if (unit === "MB") return value * 1024 * 1024;
-            if (unit === "GB") return value * 1024 * 1024 * 1024;
-            return value;
-          };
-          const audioSize = parseSize(audioFormat.size);
-          if (audioSize > 0) {
-            audioSizeInfo = ` ~ _${formatBytes(audioSize)}_`;
-          }
-        }
-        qualityText += `*${
-          uniqueQualities.length + 1
-        }.* _*Audio Only*_${audioSizeInfo}\n`;
-      }
-
+      qualityText += `*${uniqueQualities.length + 1}.* _*Audio Only*_${audioFormat?.size ? ` ~ _${audioFormat.size}_` : ""}\n`;
       qualityText += "\n_Reply with a number to download_";
 
       await message.edit(qualityText, message.jid, infoMsg.key);
@@ -258,6 +370,9 @@ Module(
   }
 );
 
+// ==========================================
+// 4. VIDEO COMMAND
+// ==========================================
 Module(
   {
     pattern: "video ?(.*)",
@@ -279,7 +394,6 @@ Module(
       );
     }
 
-    // Convert YouTube Shorts URL to regular watch URL if needed
     if (url.includes("youtube.com/shorts/")) {
       const shortId = url.match(/youtube\.com\/shorts\/([A-Za-z0-9_-]+)/)?.[1];
       if (shortId) {
@@ -338,6 +452,9 @@ Module(
   }
 );
 
+// ==========================================
+// 5. YTA COMMAND
+// ==========================================
 Module(
   {
     pattern: "yta ?(.*)",
@@ -359,7 +476,6 @@ Module(
       );
     }
 
-    // Convert YouTube Shorts URL to regular watch URL if needed
     if (url.includes("youtube.com/shorts/")) {
       const shortId = url.match(/youtube\.com\/shorts\/([A-Za-z0-9_-]+)/)?.[1];
       if (shortId) {
@@ -375,14 +491,11 @@ Module(
       const result = await downloadAudio(url);
       audioPath = result.path;
 
-      const mp3Path = await convertM4aToMp3(audioPath, { title: result?.title, artist: result?.info?.channel?.name, thumbnail: result?.info?.thumbnail });
-      audioPath = mp3Path;
-
       await message.edit("_Sending audio..._", message.jid, downloadMsg.key);
 
       const stream = fs.createReadStream(audioPath);
       await message.sendMessage({ stream }, "document", {
-        fileName: `${result.title}.m4a`,
+        fileName: `${result.title}.mp3`,
         mimetype: "audio/mp4",
         caption: `_*${result.title}*_`,
       });
@@ -409,6 +522,9 @@ Module(
   }
 );
 
+// ==========================================
+// 6. PLAY COMMAND
+// ==========================================
 Module(
   {
     pattern: "play ?(.*)",
@@ -438,7 +554,6 @@ Module(
             urlMatch[0].includes("youtu.be"))
         ) {
           url = urlMatch[0];
-          // Convert YouTube Shorts URL to regular watch URL if needed
           if (url.includes("youtube.com/shorts/")) {
             const shortId = url.match(
               /youtube\.com\/shorts\/([A-Za-z0-9_-]+)/
@@ -454,9 +569,6 @@ Module(
         downloadMsg = await message.sendReply("_Downloading audio..._");
         const result = await downloadAudio(url);
         audioPath = result.path;
-
-        const mp3Path = await convertM4aToMp3(audioPath, { title: result?.title, artist: result?.info?.channel?.name, thumbnail: result?.info?.thumbnail });
-        audioPath = mp3Path;
 
         await message.edit(
           `_Sending *${result.title}*..._`,
@@ -503,9 +615,6 @@ Module(
         const result = await downloadAudio(video.url);
         audioPath = result.path;
 
-        const mp3Path = await convertM4aToMp3(audioPath, { title: result?.title, artist: result?.info?.channel?.name, thumbnail: result?.info?.thumbnail });
-        audioPath = mp3Path;
-
         await message.edit(
           `_Sending *${video.title}*..._`,
           message.jid,
@@ -544,6 +653,9 @@ Module(
   }
 );
 
+// ============================================================
+// 7. INTERACTIVE TEXT LISTENER (NUMBERS & AUDIO/VIDEO SELECTION)
+// ============================================================
 Module(
   {
     on: "text",
@@ -561,6 +673,8 @@ Module(
       return;
     }
     const repliedText = message.reply_message.message;
+
+    // STEP A: SELECTION FROM .song (REPLY WITH 1-10 TO GET AUDIO)
     if (
       repliedText.includes("YouTube Search Results") &&
       repliedText.includes("to download audio")
@@ -568,10 +682,6 @@ Module(
       if (selectedNumber < 1 || selectedNumber > 10) {
         return await message.sendReply("_Please select a number between 1-10_");
       }
-
-      const lines = repliedText.split("\n");
-      let videoTitle = null;
-      let videoUrl = null;
 
       try {
         const queryMatch = repliedText.match(
@@ -597,9 +707,6 @@ Module(
 
           const result = await downloadAudio(selectedVideo.url);
           audioPath = result.path;
-
-          const mp3Path = await convertM4aToMp3(audioPath, { title: result?.title, artist: result?.info?.channel?.name, thumbnail: result?.info?.thumbnail });
-          audioPath = mp3Path;
 
           await message.edit(
             "_Sending audio..._",
@@ -641,7 +748,9 @@ Module(
         console.error("Song selection error:", error);
         await message.sendReply("_Failed to process your selection._");
       }
-    } else if (
+    }
+    // STEP B: SELECTION FROM .yts (REPLY WITH 1-10 TO SEE DETAILS & CARD)
+    else if (
       repliedText.includes("YouTube Search Results") &&
       repliedText.includes("see video details")
     ) {
@@ -664,11 +773,14 @@ Module(
 
         const selectedVideo = results[selectedNumber - 1];
 
-        const axios = require("axios");
-        const thumbnailResponse = await axios.get(selectedVideo.thumbnail, {
-          responseType: "arraybuffer",
-        });
-        const thumbnailBuffer = Buffer.from(thumbnailResponse.data);
+        let thumbnailBuffer = null;
+        try {
+          const thumbnailResponse = await axios.get(selectedVideo.thumbnail, {
+            responseType: "arraybuffer",
+            timeout: 7000,
+          });
+          thumbnailBuffer = Buffer.from(thumbnailResponse.data);
+        } catch (e) {}
 
         let caption = `_*${selectedVideo.title}*_\n\n`;
         caption += `*Channel:* ${selectedVideo.channel.name}\n`;
@@ -680,16 +792,22 @@ Module(
         caption += "*1.* Audio\n";
         caption += "*2.* Video";
 
-        await message.sendReply(thumbnailBuffer, "image", {
-          caption: caption,
-        });
+        if (thumbnailBuffer) {
+          await message.sendReply(thumbnailBuffer, "image", {
+            caption: caption,
+          });
+        } else {
+          await message.sendReply(caption);
+        }
       } catch (error) {
         console.error("YTS video info error:", error);
         await message.sendReply("_Failed to fetch video info._");
       }
-    } else if (
+    }
+    // STEP C: REPLY 1 (AUDIO) OR 2 (VIDEO) ON THE DETAILS CARD
+    else if (
       repliedText.includes("Reply with:") &&
-      repliedText.includes("* Audio")
+      (repliedText.includes("* Audio") || repliedText.includes("1. Audio"))
     ) {
       if (selectedNumber !== 1 && selectedNumber !== 2) {
         return await message.sendReply(
@@ -703,7 +821,7 @@ Module(
 
         const url = urlMatch[1].trim();
         const titleMatch = repliedText.match(/_\*([^*]+)\*_/);
-        const title = titleMatch ? titleMatch[1] : "Video";
+        const title = titleMatch ? titleMatch[1] : "Media";
 
         let downloadMsg;
         let filePath;
@@ -711,12 +829,8 @@ Module(
         if (selectedNumber === 1) {
           try {
             downloadMsg = await message.sendReply(`_Downloading audio..._`);
-
             const result = await downloadAudio(url);
             filePath = result.path;
-
-            const mp3Path = await convertM4aToMp3(filePath, { title: result?.title, artist: result?.info?.channel?.name, thumbnail: result?.info?.thumbnail });
-            filePath = mp3Path;
 
             await message.edit(
               "_Sending audio..._",
@@ -757,7 +871,6 @@ Module(
         } else if (selectedNumber === 2) {
           try {
             downloadMsg = await message.sendReply(`_Downloading video..._`);
-
             const result = await downloadVideo(url, "360p");
             filePath = result.path;
 
@@ -816,7 +929,9 @@ Module(
         console.error("YTS download selection error:", error);
         await message.sendReply("_Failed to process download._");
       }
-    } else if (
+    }
+    // STEP D: SELECT VIDEO QUALITY (.ytv)
+    else if (
       repliedText.includes("Select Video Quality") &&
       repliedText.includes("Reply with a number")
     ) {
@@ -845,10 +960,6 @@ Module(
         }
 
         const url = `https://www.youtube.com/watch?v=${videoId}`;
-
-        const titleMatch = repliedText.match(/_\*([^*]+)\*_/);
-        if (!titleMatch) return;
-
         const qualityLines = lines.filter((line) => line.match(/^\*\d+\./));
 
         if (!qualityLines[selectedNumber - 1]) {
@@ -864,12 +975,8 @@ Module(
 
           try {
             downloadMsg = await message.sendReply("_Downloading audio..._");
-
             const result = await downloadAudio(url);
             audioPath = result.path;
-
-            const mp3Path = await convertM4aToMp3(audioPath, { title: result?.title, artist: result?.info?.channel?.name, thumbnail: result?.info?.thumbnail });
-            audioPath = mp3Path;
 
             await message.edit(
               "_Sending audio..._",
@@ -879,7 +986,7 @@ Module(
 
             const stream = fs.createReadStream(audioPath);
             await message.sendMessage({ stream }, "document", {
-              fileName: `${result.title}.m4a`,
+              fileName: `${result.title}.mp3`,
               mimetype: "audio/mp4",
               caption: `_*${result.title}*_`,
             });
@@ -911,9 +1018,7 @@ Module(
           }
         } else {
           const qualityMatch = selectedLine.match(/(\d+p)/);
-          if (!qualityMatch) return;
-
-          const selectedQuality = qualityMatch[1];
+          const selectedQuality = qualityMatch ? qualityMatch[1] : "360p";
 
           let downloadMsg;
           let videoPath;
@@ -985,6 +1090,9 @@ Module(
   }
 );
 
+// ==========================================
+// 8. SPOTIFY COMMAND
+// ==========================================
 Module(
   {
     pattern: "spotify ?(.*)",
@@ -1034,9 +1142,6 @@ Module(
       const video = results[0];
       const result = await downloadAudio(video.url);
       audioPath = result.path;
-
-      const mp3Path = await convertM4aToMp3(audioPath, { title: title || result?.title, artist: artist || result?.info?.channel?.name, thumbnail: spotifyInfo?.thumbnail || result?.info?.thumbnail });
-      audioPath = mp3Path;
 
       await message.edit(
         "_Sending audio..._",
