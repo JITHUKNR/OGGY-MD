@@ -25,118 +25,132 @@ function cleanYtUrl(url) {
   return match && match[1] ? `https://www.youtube.com/watch?v=${match[1]}` : url;
 }
 
-// 1. BULLETPROOF AUDIO DOWNLOADER (yt-dlp with mobile bypass + API Fallback)
+// 1. BULLETPROOF AUDIO DOWNLOADER (Multi-Engine)
 async function downloadAudio(url) {
   const timestamp = Date.now();
   let title = "YouTube Audio";
   let channel = "YouTube";
   let thumbnail = "";
   const cleaned = cleanYtUrl(url);
-
-  const outTemplate = path.join("/tmp", `yt_aud_${timestamp}.%(ext)s`);
   const targetMp3 = path.join("/tmp", `yt_aud_${timestamp}.mp3`);
 
-  // ENGINE 1: yt-dlp with Android/iOS client spoofing (bypasses bot verification)
+  // Engine 1: David Cyril API
   try {
-    const cmd = `yt-dlp --extractor-args "youtube:player_client=android,ios" -x --audio-format mp3 --audio-quality 0 --no-playlist -o "${outTemplate}" "${cleaned}"`;
+    const res = await axios.get(`https://api.davidcyriltech.my.id/download/ytmp3?url=${encodeURIComponent(cleaned)}`, { timeout: 20000 });
+    const dlUrl = res?.data?.result?.download_url;
+    title = res?.data?.result?.title || title;
+    if (dlUrl) {
+      const streamRes = await axios.get(dlUrl, { responseType: "arraybuffer", timeout: 45000 });
+      fs.writeFileSync(targetMp3, Buffer.from(streamRes.data));
+      return { path: targetMp3, title: title, info: { channel: { name: channel }, thumbnail: thumbnail } };
+    }
+  } catch (e) {}
+
+  // Engine 2: Widipe API
+  try {
+    const res = await axios.get(`https://widipe.com/download/ytdl?url=${encodeURIComponent(cleaned)}`, { timeout: 20000 });
+    const dlUrl = res?.data?.result?.mp3;
+    title = res?.data?.result?.title || title;
+    if (dlUrl) {
+      const streamRes = await axios.get(dlUrl, { responseType: "arraybuffer", timeout: 45000 });
+      fs.writeFileSync(targetMp3, Buffer.from(streamRes.data));
+      return { path: targetMp3, title: title, info: { channel: { name: channel }, thumbnail: thumbnail } };
+    }
+  } catch (e) {}
+
+  // Engine 3: Siputzx API
+  try {
+    const res = await axios.get(`https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(cleaned)}`, { timeout: 20000 });
+    const dlUrl = res?.data?.data?.dl;
+    title = res?.data?.data?.title || title;
+    if (dlUrl) {
+      const streamRes = await axios.get(dlUrl, { responseType: "arraybuffer", timeout: 45000 });
+      fs.writeFileSync(targetMp3, Buffer.from(streamRes.data));
+      return { path: targetMp3, title: title, info: { channel: { name: channel }, thumbnail: thumbnail } };
+    }
+  } catch (e) {}
+
+  // Engine 4: Ryzendesu API
+  try {
+    const res = await axios.get(`https://api.ryzendesu.vip/api/downloader/ytmp3?url=${encodeURIComponent(cleaned)}`, { timeout: 20000 });
+    const dlUrl = res?.data?.url;
+    title = res?.data?.title || title;
+    if (dlUrl) {
+      const streamRes = await axios.get(dlUrl, { responseType: "arraybuffer", timeout: 45000 });
+      fs.writeFileSync(targetMp3, Buffer.from(streamRes.data));
+      return { path: targetMp3, title: title, info: { channel: { name: channel }, thumbnail: thumbnail } };
+    }
+  } catch (e) {}
+
+  // Engine 5: Local VPS yt-dlp with TV Client Bypass
+  try {
+    const outTemplate = path.join("/tmp", `yt_aud_${timestamp}.%(ext)s`);
+    const cmd = `yt-dlp --extractor-args "youtube:player_client=tv_embedded" -x --audio-format mp3 --audio-quality 0 --no-playlist -o "${outTemplate}" "${cleaned}"`;
     await runCmd(cmd);
 
     const files = fs.readdirSync("/tmp").filter((f) => f.startsWith(`yt_aud_${timestamp}`));
     if (files.length > 0) {
-      return {
-        path: path.join("/tmp", files[0]),
-        title: title,
-        info: { channel: { name: channel }, thumbnail: thumbnail },
-      };
+      return { path: path.join("/tmp", files[0]), title: title, info: { channel: { name: channel }, thumbnail: thumbnail } };
     }
-  } catch (err) {
-    console.log("yt-dlp failed, switching to backup API engine...");
-  }
-
-  // ENGINE 2: High-Speed Backup API
-  try {
-    let dlUrl = null;
-    try {
-      const res = await axios.get(`https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(cleaned)}`, { timeout: 20000 });
-      dlUrl = res?.data?.data?.dl;
-      title = res?.data?.data?.title || title;
-    } catch (e) {}
-
-    if (!dlUrl) {
-      const res2 = await axios.get(`https://widipe.com/download/ytdl?url=${encodeURIComponent(cleaned)}`, { timeout: 20000 });
-      dlUrl = res2?.data?.result?.mp3;
-      title = res2?.data?.result?.title || title;
-    }
-
-    if (dlUrl) {
-      const streamRes = await axios.get(dlUrl, { responseType: "arraybuffer", timeout: 45000 });
-      fs.writeFileSync(targetMp3, Buffer.from(streamRes.data));
-      return {
-        path: targetMp3,
-        title: title,
-        info: { channel: { name: channel }, thumbnail: thumbnail },
-      };
-    }
-  } catch (apiErr) {
-    console.error("Backup API Error:", apiErr);
-  }
+  } catch (e) {}
 
   throw new Error("All audio download engines failed");
 }
 
-// 2. BULLETPROOF VIDEO DOWNLOADER (yt-dlp with mobile bypass + API Fallback)
+// 2. BULLETPROOF VIDEO DOWNLOADER (Multi-Engine)
 async function downloadVideo(url, quality = "360p") {
   const timestamp = Date.now();
   let title = "YouTube Video";
   const cleaned = cleanYtUrl(url);
-
-  const outTemplate = path.join("/tmp", `yt_vid_${timestamp}.%(ext)s`);
   const targetMp4 = path.join("/tmp", `yt_vid_${timestamp}.mp4`);
 
-  // ENGINE 1: yt-dlp with Android/iOS client spoofing
+  // Engine 1: David Cyril API
   try {
-    const res = parseInt(quality) || 360;
-    const formatSelector = `bv*[height<=${res}][ext=mp4]+ba*[ext=m4a]/b[height<=${res}][ext=mp4]/bv*+ba/b`;
-    const cmd = `yt-dlp --extractor-args "youtube:player_client=android,ios" -f "${formatSelector}" --merge-output-format mp4 --no-playlist -o "${outTemplate}" "${cleaned}"`;
+    const res = await axios.get(`https://api.davidcyriltech.my.id/download/ytmp4?url=${encodeURIComponent(cleaned)}`, { timeout: 20000 });
+    const dlUrl = res?.data?.result?.download_url;
+    title = res?.data?.result?.title || title;
+    if (dlUrl) {
+      const streamRes = await axios.get(dlUrl, { responseType: "arraybuffer", timeout: 60000 });
+      fs.writeFileSync(targetMp4, Buffer.from(streamRes.data));
+      return { path: targetMp4, title: title };
+    }
+  } catch (e) {}
+
+  // Engine 2: Widipe API
+  try {
+    const res = await axios.get(`https://widipe.com/download/ytdl?url=${encodeURIComponent(cleaned)}`, { timeout: 20000 });
+    const dlUrl = res?.data?.result?.mp4;
+    title = res?.data?.result?.title || title;
+    if (dlUrl) {
+      const streamRes = await axios.get(dlUrl, { responseType: "arraybuffer", timeout: 60000 });
+      fs.writeFileSync(targetMp4, Buffer.from(streamRes.data));
+      return { path: targetMp4, title: title };
+    }
+  } catch (e) {}
+
+  // Engine 3: Siputzx API
+  try {
+    const res = await axios.get(`https://api.siputzx.my.id/api/d/ytmp4?url=${encodeURIComponent(cleaned)}`, { timeout: 20000 });
+    const dlUrl = res?.data?.data?.dl;
+    title = res?.data?.data?.title || title;
+    if (dlUrl) {
+      const streamRes = await axios.get(dlUrl, { responseType: "arraybuffer", timeout: 60000 });
+      fs.writeFileSync(targetMp4, Buffer.from(streamRes.data));
+      return { path: targetMp4, title: title };
+    }
+  } catch (e) {}
+
+  // Engine 4: Local VPS yt-dlp with TV Client Bypass
+  try {
+    const outTemplate = path.join("/tmp", `yt_vid_${timestamp}.%(ext)s`);
+    const cmd = `yt-dlp --extractor-args "youtube:player_client=tv_embedded" -f "b[ext=mp4]/bv*+ba/b" --merge-output-format mp4 --no-playlist -o "${outTemplate}" "${cleaned}"`;
     await runCmd(cmd);
 
     const files = fs.readdirSync("/tmp").filter((f) => f.startsWith(`yt_vid_${timestamp}`));
     if (files.length > 0) {
-      return {
-        path: path.join("/tmp", files[0]),
-        title: title,
-      };
+      return { path: path.join("/tmp", files[0]), title: title };
     }
-  } catch (err) {
-    console.log("yt-dlp video failed, switching to backup API engine...");
-  }
-
-  // ENGINE 2: Backup Video API
-  try {
-    let dlUrl = null;
-    try {
-      const res = await axios.get(`https://api.siputzx.my.id/api/d/ytmp4?url=${encodeURIComponent(cleaned)}`, { timeout: 20000 });
-      dlUrl = res?.data?.data?.dl;
-      title = res?.data?.data?.title || title;
-    } catch (e) {}
-
-    if (!dlUrl) {
-      const res2 = await axios.get(`https://widipe.com/download/ytdl?url=${encodeURIComponent(cleaned)}`, { timeout: 20000 });
-      dlUrl = res2?.data?.result?.mp4;
-      title = res2?.data?.result?.title || title;
-    }
-
-    if (dlUrl) {
-      const streamRes = await axios.get(dlUrl, { responseType: "arraybuffer", timeout: 60000 });
-      fs.writeFileSync(targetMp4, Buffer.from(streamRes.data));
-      return {
-        path: targetMp4,
-        title: title,
-      };
-    }
-  } catch (apiErr) {
-    console.error("Backup Video API Error:", apiErr);
-  }
+  } catch (e) {}
 
   throw new Error("All video download engines failed");
 }
@@ -157,7 +171,6 @@ async function getVideoInfo(url) {
   };
 }
 
-// 3. Search Engine
 async function searchYoutube(query, limit = 10) {
   try {
     const yts = require("yt-search");
@@ -194,27 +207,62 @@ function formatViews(views) {
 }
 
 // ==========================================
-// 1. SONG COMMAND
+// 1. SONG COMMAND (SUPPORTS BOTH LINK & NAME)
 // ==========================================
 Module(
   {
     pattern: "song ?(.*)",
     fromMe: fromMe,
-    desc: "Search YouTube and download audio",
-    usage: ".song <query>",
+    desc: "Search YouTube or download audio directly from link",
+    usage: ".song <query or link>",
     use: "download",
   },
   async (message, match) => {
-    const query = match[1];
-    if (!query) {
+    let input = match[1] || message.reply_message?.text;
+    if (!input) {
       return await message.sendReply(
-        "_Please provide a search query!_\n_Example: .song faded alan walker_"
+        "_Please provide a search query or YouTube link!_\n_Example: .song faded alan walker or .song https://youtu.be/..._"
       );
     }
 
+    // Direct link check: downloads immediately without searching
+    const isUrl = /(?:youtu\.be\/|youtube\.com)/i.test(input);
+
+    if (isUrl) {
+      const urlMatch = input.match(/\bhttps?:\/\/\S+/gi);
+      const url = urlMatch ? urlMatch[0] : input;
+
+      let downloadMsg;
+      let audioPath;
+      try {
+        downloadMsg = await message.sendReply("_🎵 Downloading audio, please wait..._");
+        const result = await downloadAudio(url);
+        audioPath = result.path;
+
+        await message.edit(`_Sending *${result.title}*..._`, message.jid, downloadMsg.key);
+
+        const stream = fs.createReadStream(audioPath);
+        await message.sendReply({ stream }, "audio", { mimetype: "audio/mp4" });
+        stream.destroy();
+
+        await message.edit(`_Downloaded *${result.title}*!_`, message.jid, downloadMsg.key);
+        if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
+      } catch (err) {
+        console.error("Song URL download error:", err);
+        if (downloadMsg) {
+          await message.edit("_Download failed!_", message.jid, downloadMsg.key);
+        } else {
+          await message.sendReply("_Download failed. Please try again._");
+        }
+        if (audioPath && fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
+      }
+      return;
+    }
+
+    // Search query: shows 1-10 interactive results
     try {
       const searchMsg = await message.sendReply("_Searching YouTube..._");
-      const results = await searchYoutube(query, 10);
+      const results = await searchYoutube(input, 10);
 
       if (!results || results.length === 0) {
         return await message.edit(
@@ -225,7 +273,7 @@ Module(
       }
 
       let resultText = "YouTube Search Results\n\n";
-      resultText += `_Found ${results.length} results for:_ *${query}*\n\n`;
+      resultText += `_Found ${results.length} results for:_ *${input}*\n\n`;
 
       results.forEach((video, index) => {
         resultText += `*${index + 1}.* ${video.title}\n`;
@@ -393,8 +441,6 @@ Module(
       }
 
       await message.edit("_Download complete!_", message.jid, downloadMsg.key);
-
-      await new Promise((resolve) => setTimeout(resolve, 100));
       if (fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
     } catch (error) {
       console.error("Video download error:", error);
@@ -451,8 +497,6 @@ Module(
       stream.destroy();
 
       await message.edit("_Download complete!_", message.jid, downloadMsg.key);
-
-      await new Promise((resolve) => setTimeout(resolve, 100));
       if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
     } catch (error) {
       console.error("YTA download error:", error);
@@ -509,8 +553,6 @@ Module(
         stream1.destroy();
 
         await message.edit(`_Downloaded *${result.title}*!_`, message.jid, downloadMsg.key);
-
-        await new Promise((resolve) => setTimeout(resolve, 100));
         if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
       } else {
         downloadMsg = await message.sendReply("_Searching..._");
@@ -533,8 +575,6 @@ Module(
         stream2.destroy();
 
         await message.edit(`_Downloaded *${video.title}*!_`, message.jid, downloadMsg.key);
-
-        await new Promise((resolve) => setTimeout(resolve, 100));
         if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
       }
     } catch (error) {
@@ -566,7 +606,7 @@ Module(
     }
     const repliedText = message.reply_message.message;
 
-    // STEP A: SELECTION FROM .song
+    // STEP A: SELECTION FROM .song (REPLY WITH 1-10)
     if (repliedText.includes("YouTube Search Results") && repliedText.includes("to download audio")) {
       if (selectedNumber < 1 || selectedNumber > 10) {
         return await message.sendReply("_Please select a number between 1-10_");
@@ -595,8 +635,6 @@ Module(
           stream3.destroy();
 
           await message.edit("_Download complete!_", message.jid, downloadMsg.key);
-
-          await new Promise((resolve) => setTimeout(resolve, 100));
           if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
         } catch (err) {
           console.error(err);
@@ -607,7 +645,7 @@ Module(
         await message.sendReply("_Failed to process your selection._");
       }
     }
-    // STEP B: SELECTION FROM .yts
+    // STEP B: SELECTION FROM .yts (REPLY WITH 1-10 TO SEE DETAILS CARD)
     else if (repliedText.includes("YouTube Search Results") && repliedText.includes("see video details")) {
       if (selectedNumber < 1 || selectedNumber > 10) {
         return await message.sendReply("_Please select a number between 1-10_");
@@ -683,8 +721,6 @@ Module(
             stream4.destroy();
 
             await message.edit("_Download complete!_", message.jid, downloadMsg.key);
-
-            await new Promise((resolve) => setTimeout(resolve, 100));
             if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
           } catch (error) {
             console.error("YTS audio download error:", error);
@@ -718,8 +754,6 @@ Module(
             }
 
             await message.edit("_Download complete!_", message.jid, downloadMsg.key);
-
-            await new Promise((resolve) => setTimeout(resolve, 100));
             if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
           } catch (error) {
             console.error("YTS video download error:", error);
@@ -732,7 +766,7 @@ Module(
         await message.sendReply("_Failed to process download._");
       }
     }
-    // STEP D: YTV QUALITY
+    // STEP D: YTV QUALITY SELECTION
     else if (repliedText.includes("Select Video Quality") && repliedText.includes("Reply with a number")) {
       try {
         const idMatch = repliedText.match(/\(([\w-]{11})\)/);
@@ -842,8 +876,6 @@ Module(
       stream.destroy();
 
       await message.edit("_Download complete!_", message.jid, downloadMsg.key);
-
-      await new Promise((resolve) => setTimeout(resolve, 100));
       if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
     } catch (error) {
       console.error("Spotify download error:", error);
