@@ -4,17 +4,13 @@ const path = require("path");
 const { exec } = require("child_process");
 const axios = require("axios");
 const { spotifyTrack } = require("./utils/misc");
-const { getBuffer } = require("./utils");
-const { setVar } = require("./manage");
 
 const config = require("../config");
 const MODE = config.MODE;
 const fromMe = MODE === "public" ? false : true;
 
-const VIDEO_SIZE_LIMIT = 150 * 1024 * 1024;
 const COOKIE_PATH = "/root/RAGANORK-BOT/cookies.txt";
 const YT_FLAGS = `--cookies "${COOKIE_PATH}" --extractor-args "youtube:player_client=mweb,web"`;
-const LOCAL_COVER_PATH = "/root/RAGANORK-BOT/audio_cover.jpg";
 
 function runCmd(cmd) {
   return new Promise((resolve, reject) => {
@@ -30,15 +26,26 @@ function cleanYtUrl(url) {
   return match && match[1] ? `https://www.youtube.com/watch?v=${match[1]}` : url;
 }
 
-// 1. BULLETPROOF FAST YT-DLP AUDIO DOWNLOADER
+// 1. FAST BULLETPROOF YT-DLP AUDIO DOWNLOADER WITH REAL METADATA
 async function downloadAudio(url) {
   const timestamp = Date.now();
   const cleaned = cleanYtUrl(url);
   let title = "YouTube Audio";
+  let uploader = "YouTube Music";
+  let duration = "";
+  let thumbnail = "";
 
   try {
-    const t = await runCmd(`yt-dlp ${YT_FLAGS} --print "%(title)s" --no-playlist "${cleaned}"`);
-    if (t) title = t.split("\n")[0].trim();
+    const meta = await runCmd(
+      `yt-dlp ${YT_FLAGS} --print "%(title)s|||%(uploader)s|||%(duration_string)s|||%(thumbnail)s" --no-playlist "${cleaned}"`
+    );
+    if (meta) {
+      const parts = meta.split("\n")[0].split("|||");
+      if (parts[0]) title = parts[0].trim();
+      if (parts[1]) uploader = parts[1].trim();
+      if (parts[2]) duration = parts[2].trim();
+      if (parts[3]) thumbnail = parts[3].trim();
+    }
   } catch (e) {
     title = `audio_${timestamp}`;
   }
@@ -53,7 +60,10 @@ async function downloadAudio(url) {
   return {
     path: finalPath,
     title: title,
-    info: { channel: { name: "YouTube" }, thumbnail: "" },
+    uploader: uploader,
+    duration: duration,
+    thumbnail: thumbnail,
+    url: cleaned,
   };
 }
 
@@ -134,41 +144,49 @@ function formatViews(views) {
   return views?.toString() || "N/A";
 }
 
-// HELPER: SENDS BRANDED COVER CARD + AUDIO (100% RELIABLE)
-async function sendBrandedAudio(sock, jid, audioPath, title, quotedData) {
-  const cleanTitle = (title || "YouTube Audio").replace(/[\\/:*?"<>|]/g, "").substring(0, 45).trim();
-  const artist = config.AUDIO_DATA?.split(";")[1] || "ABHIIXZ";
+// INLINE CARD HELPER: SENDS INLINE PREVIEW (NO FULL-SCREEN ZOOM) + AUDIO
+async function sendInlineSong(sock, jid, result, quotedData, customUrl = "") {
+  const cleanTitle = (result.title || "YouTube Audio").replace(/[\\/:*?"<>|]/g, "").substring(0, 50).trim();
+  const artist = result.uploader || result.channel?.name || "YouTube Artist";
+  const songUrl = customUrl || result.url || "https://www.youtube.com";
 
-  // 1. Send Cover Art Image Card with Details
-  if (fs.existsSync(LOCAL_COVER_PATH)) {
-    try {
-      const coverBuffer = fs.readFileSync(LOCAL_COVER_PATH);
-      await sock.sendMessage(
-        jid,
-        {
-          image: coverBuffer,
-          caption:
-            `╭───〔 ⚡ *OGGY-MD MUSIC* ⚡ 〕───\n` +
-            `│ 🎵 *Title:* ${cleanTitle}\n` +
-            `│ 👤 *Artist:* ${artist}\n` +
-            `│ 💿 *Album:* OGGY-MD\n` +
-            `╰────────────────────────`,
-        },
-        { quoted: quotedData }
-      );
-    } catch (e) {
-      console.error("Cover send error:", e);
-    }
+  // 1. INLINE PREVIEW CARD (ഫോട്ടോയിൽ തൊട്ടാൽ സൂം ചെയ്ത് വരില്ല)
+  let caption = `╭━━━〔 🎵 *YOUTUBE MUSIC* 〕━━━╮\n`;
+  caption += `┃ 🎶 *Title:* ${cleanTitle}\n`;
+  caption += `┃ 👤 *Artist:* ${artist}\n`;
+  if (result.duration) {
+    caption += `┃ ⏱️ *Duration:* ${result.duration}\n`;
+  }
+  caption += `╰━━━━━━━━━━━━━━━━━━━━━╯`;
+
+  const cardPayload = {
+    text: caption,
+  };
+
+  if (result.thumbnail) {
+    cardPayload.contextInfo = {
+      externalAdReply: {
+        title: cleanTitle,
+        body: artist,
+        mediaType: 1,
+        thumbnailUrl: result.thumbnail,
+        renderLargerThumbnail: true,
+        showAdAttribution: false,
+        sourceUrl: songUrl,
+      },
+    };
   }
 
-  // 2. Send Clean Playable Audio (WhatsApp will never drop this)
+  await sock.sendMessage(jid, cardPayload, { quoted: quotedData });
+
+  // 2. പ്ലേ ചെയ്യാവുന്ന ഒറിജിനൽ ഓഡിയോ
   await sock.sendMessage(
     jid,
     {
-      audio: fs.readFileSync(audioPath),
+      audio: fs.readFileSync(result.path),
       mimetype: "audio/mp4",
       ptt: false,
-      fileName: `${cleanTitle} - OGGY MD.mp3`,
+      fileName: `${cleanTitle}.mp3`,
     },
     { quoted: quotedData }
   );
@@ -207,7 +225,7 @@ Module(
         const result = await downloadAudio(url);
         audioPath = result.path;
 
-        await sendBrandedAudio(sock, message.jid, audioPath, result.title, message.data);
+        await sendInlineSong(sock, message.jid, result, message.data, url);
 
         if (downloadMsg && downloadMsg.key) {
           await sock.sendMessage(message.jid, { delete: downloadMsg.key }).catch(() => {});
@@ -233,7 +251,7 @@ Module(
         return await message.edit("_No results found!_", message.jid, searchMsg.key);
       }
 
-      let resultText = "╭───〔 ⚡ *OGGY-MD MUSIC* ⚡ 〕───\n";
+      let resultText = "╭───〔 ⚡ *OGGY-MD SEARCH* ⚡ 〕───\n";
       resultText += `│ _Results for:_ *${input}*\n╰────────────────────────\n\n`;
 
       results.forEach((video, index) => {
@@ -361,7 +379,7 @@ Module(
         message.jid,
         {
           video: fs.readFileSync(videoPath),
-          caption: `_*${result.title}*_\n\n_By: OGGY-MD • ABHIIXZ_`,
+          caption: `_*${result.title}*_\n\n_By: OGGY-MD_`,
           mimetype: "video/mp4",
         },
         { quoted: message.data }
@@ -380,13 +398,13 @@ Module(
 );
 
 // ==========================================
-// 5. YTA COMMAND (DOCUMENT FORMAT WITH EXACT NAME)
+// 5. YTA COMMAND
 // ==========================================
 Module(
   {
     pattern: "yta ?(.*)",
     fromMe: fromMe,
-    desc: "Download YouTube audio as document with full title",
+    desc: "Download YouTube audio as document",
     usage: ".yta <link>",
     use: "download",
   },
@@ -407,15 +425,15 @@ Module(
       const result = await downloadAudio(url);
       audioPath = result.path;
 
-      const cleanTitle = (result.title || "YouTube Audio").replace(/[\\/:*?"<>|]/g, "").substring(0, 45).trim();
+      const cleanTitle = (result.title || "YouTube Audio").replace(/[\\/:*?"<>|]/g, "").substring(0, 50).trim();
 
       await sock.sendMessage(
         message.jid,
         {
           document: fs.readFileSync(audioPath),
-          fileName: `${cleanTitle} - OGGY MD.mp3`,
+          fileName: `${cleanTitle}.mp3`,
           mimetype: "audio/mp4",
-          caption: `_*${cleanTitle}*_\n_By: OGGY-MD • ABHIIXZ_`,
+          caption: `_*${cleanTitle}*_`,
         },
         { quoted: message.data }
       );
@@ -470,7 +488,7 @@ Module(
       const result = await downloadAudio(targetUrl);
       audioPath = result.path;
 
-      await sendBrandedAudio(sock, message.jid, audioPath, result.title, message.data);
+      await sendInlineSong(sock, message.jid, result, message.data, targetUrl);
 
       if (downloadMsg && downloadMsg.key) {
         await sock.sendMessage(message.jid, { delete: downloadMsg.key }).catch(() => {});
@@ -502,7 +520,7 @@ Module(
     const sock = message.client || message;
 
     // STEP A: SELECTION FROM .song
-    if (repliedText.includes("OGGY-MD MUSIC") || (repliedText.includes("YouTube Search Results") && repliedText.includes("to download audio"))) {
+    if (repliedText.includes("OGGY-MD SEARCH") || (repliedText.includes("YouTube Search Results") && repliedText.includes("to download audio"))) {
       if (selectedNumber < 1 || selectedNumber > 10) {
         return await message.sendReply("_Please select a number between 1-10_");
       }
@@ -519,14 +537,16 @@ Module(
 
         try {
           const result = await downloadAudio(selectedVideo.url);
-          const audioPath = result.path;
+          result.thumbnail = selectedVideo.thumbnail;
+          result.uploader = selectedVideo.channel?.name || result.uploader;
+          result.duration = selectedVideo.duration || result.duration;
 
-          await sendBrandedAudio(sock, message.jid, audioPath, selectedVideo.title, message.data);
+          await sendInlineSong(sock, message.jid, result, message.data, selectedVideo.url);
 
           if (downloadMsg && downloadMsg.key) {
             await sock.sendMessage(message.jid, { delete: downloadMsg.key }).catch(() => {});
           }
-          if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
+          if (fs.existsSync(result.path)) fs.unlinkSync(result.path);
         } catch (err) {
           if (downloadMsg) await message.edit("_Download failed!_", message.jid, downloadMsg.key);
         }
@@ -581,7 +601,7 @@ Module(
           let downloadMsg = await message.sendReply(`_Downloading audio..._`);
           try {
             const result = await downloadAudio(url);
-            await sendBrandedAudio(sock, message.jid, result.path, result.title, message.data);
+            await sendInlineSong(sock, message.jid, result, message.data, url);
 
             if (downloadMsg && downloadMsg.key) {
               await sock.sendMessage(message.jid, { delete: downloadMsg.key }).catch(() => {});
@@ -598,7 +618,7 @@ Module(
               message.jid,
               {
                 video: fs.readFileSync(result.path),
-                caption: `_*${result.title}*_\n\n_By: OGGY-MD • ABHIIXZ_`,
+                caption: `_*${result.title}*_\n\n_By: OGGY-MD_`,
                 mimetype: "video/mp4",
               },
               { quoted: message.data }
@@ -625,15 +645,15 @@ Module(
           const downloadMsg = await message.sendReply("_Downloading audio..._");
           try {
             const result = await downloadAudio(url);
-            const cleanTitle = (result.title || "YouTube Audio").replace(/[\\/:*?"<>|]/g, "").substring(0, 45).trim();
+            const cleanTitle = (result.title || "YouTube Audio").replace(/[\\/:*?"<>|]/g, "").substring(0, 50).trim();
 
             await sock.sendMessage(
               message.jid,
               {
                 document: fs.readFileSync(result.path),
-                fileName: `${cleanTitle} - OGGY MD.mp3`,
+                fileName: `${cleanTitle}.mp3`,
                 mimetype: "audio/mp4",
-                caption: `_*${cleanTitle}*_\n_By: OGGY-MD • ABHIIXZ_`,
+                caption: `_*${cleanTitle}*_`,
               },
               { quoted: message.data }
             );
@@ -654,7 +674,7 @@ Module(
               message.jid,
               {
                 video: fs.readFileSync(result.path),
-                caption: `_*${result.title}*_\n\n_Quality: ${quality}_\n_By: OGGY-MD • ABHIIXZ_`,
+                caption: `_*${result.title}*_\n\n_Quality: ${quality}_\n_By: OGGY-MD_`,
                 mimetype: "video/mp4",
               },
               { quoted: message.data }
@@ -707,7 +727,10 @@ Module(
       }
 
       const result = await downloadAudio(results[0].url);
-      await sendBrandedAudio(sock, message.jid, result.path, title, message.data);
+      result.thumbnail = results[0].thumbnail;
+      result.uploader = artist;
+
+      await sendInlineSong(sock, message.jid, result, message.data, url);
 
       if (downloadMsg && downloadMsg.key) {
         await sock.sendMessage(message.jid, { delete: downloadMsg.key }).catch(() => {});
@@ -716,89 +739,5 @@ Module(
     } catch (error) {
       if (downloadMsg) await message.edit("_Download failed!_", message.jid, downloadMsg.key);
     }
-  }
-);
-
-// ============================================================
-// 9. WHATSAPP വഴി ലോക്കലായി ലോഗോ സേവ് ചെയ്യുന്ന കമാൻഡ് (.setaudiocover)
-// ============================================================
-Module(
-  {
-    pattern: "setaudiocover ?(.*)",
-    fromMe: false,
-    desc: "Set custom thumbnail/logo for audio downloads directly on server",
-    use: "owner",
-  },
-  async (message) => {
-    if (!message.fromOwner && !message.fromMe) return;
-
-    const isImageReply = message.reply_message && (message.reply_message.image || message.reply_message.sticker);
-    const isDirectImage = message.image;
-
-    if (!isImageReply && !isDirectImage) {
-      return await message.sendReply(
-        "╭───〔 ⚡ *OGGY-MD AUDIO COVER* 〕───\n│ ⚠️ *ഫോട്ടോയ്ക്ക് റിപ്ലൈ ആയി `.setaudiocover` എന്ന് അയക്കുക!*\n╰────────────────────────"
-      );
-    }
-
-    try {
-      const waitMsg = await message.sendReply("_⚡ സേവ് ചെയ്യുന്നു, ദയവായി കാത്തിരിക്കൂ..._");
-
-      let dl;
-      if (isImageReply) {
-        dl = await message.reply_message.download();
-      } else {
-        dl = await message.download();
-      }
-
-      let imgBuffer = null;
-      if (typeof dl === "string" && fs.existsSync(dl)) {
-        imgBuffer = fs.readFileSync(dl);
-        try { fs.unlinkSync(dl); } catch (e) {}
-      } else if (Buffer.isBuffer(dl)) {
-        imgBuffer = dl;
-      }
-
-      if (imgBuffer && Buffer.isBuffer(imgBuffer)) {
-        fs.writeFileSync(LOCAL_COVER_PATH, imgBuffer);
-        return await message.edit(
-          "╭───〔 ⚡ *OGGY-MD COVER SET* 〕───\n│ ✅ *നിങ്ങളുടെ ABHIIXZ ലോഗോ വിജയകരമായി സേവ് ചെയ്തു!*\n│ 🎵 ഇനി ഡൗൺലോഡ് ചെയ്യുന്ന പാട്ടുകൾക്ക് ഈ ലോഗോയും\n│ *OGGY-MD • ABHIIXZ* കാർഡും തെളിയും!\n╰────────────────────────",
-          message.jid,
-          waitMsg.key
-        );
-      } else {
-        return await message.edit("_❌ ഫോട്ടോ ഡൗൺലോഡ് ചെയ്യാൻ കഴിഞ്ഞില്ല!_", message.jid, waitMsg.key);
-      }
-    } catch (err) {
-      console.error("Cover save error:", err);
-      return await message.sendReply("_❌ എറർ സംഭവിച്ചു. വീണ്ടും ശ്രമിക്കുക!_");
-    }
-  }
-);
-
-// ============================================================
-// 10. ഓഡിയോ വിവരങ്ങൾ മാറ്റാനുള്ള കമാൻഡ് (.setaudiodata)
-// ============================================================
-Module(
-  {
-    pattern: "setaudiodata ?(.*)",
-    fromMe: false,
-    desc: "Set default audio title and artist name",
-    use: "owner",
-  },
-  async (message, match) => {
-    if (!message.fromOwner && !message.fromMe) return;
-    const input = match[1]?.trim();
-    if (!input) {
-      return await message.sendReply(
-        `╭───〔 ⚡ *OGGY-MD AUDIO DATA* 〕───\n│ 💡 *ഉപയോഗിക്കേണ്ട വിധം:*\n│ \`.setaudiodata OGGY-MD;ABHIIXZ\`\n╰────────────────────────`
-      );
-    }
-
-    await setVar("AUDIO_DATA", input);
-    config.AUDIO_DATA = input;
-    return await message.sendReply(
-      `╭───〔 ⚡ *OGGY-MD UPDATED* 〕───\n│ ✅ *ഓഡിയോ വിവരങ്ങൾ മാറ്റി:*\n│ 🎵 *Data:* ${input}\n╰────────────────────────`
-    );
   }
 );
