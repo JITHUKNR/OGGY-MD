@@ -19,27 +19,34 @@ async function checkRedirect(url) {
   }
   return url;
 }
-// Carousel & Reel Bulletproof Instagram Extractor
+// Carousel & Reel Bulletproof Instagram Extractor (All Slides Guaranteed)
 async function fetchInstagramMedia(rawUrl) {
-  // Remove tracking tokens like ?xtok=..., ?igsh=...
   const cleanUrl = rawUrl.split("?")[0].replace(/\/+$/, "") + "/";
-  
+
+  // Dedicated multi-slide & carousel API endpoints
   const endpoints = [
-    `https://api.siputzx.my.id/api/d/igdl?url=${encodeURIComponent(cleanUrl)}`,
+    `https://widipe.com/download/igslide?url=${encodeURIComponent(cleanUrl)}`,
     `https://delirius-apiofc.vercel.app/download/instagram?url=${encodeURIComponent(cleanUrl)}`,
+    `https://api.siputzx.my.id/api/d/igdl?url=${encodeURIComponent(cleanUrl)}`,
     `https://api.vreden.web.id/api/igdownload?url=${encodeURIComponent(cleanUrl)}`,
     `https://api.davidcyriltech.my.id/download/instagram?url=${encodeURIComponent(cleanUrl)}`
   ];
+
+  let singleFallback = null;
 
   for (const ep of endpoints) {
     try {
       const res = await axios.get(ep, { timeout: 15000 });
       let items = [];
 
-      if (Array.isArray(res.data?.data)) {
-        items = res.data.data;
-      } else if (Array.isArray(res.data?.result)) {
+      if (Array.isArray(res.data?.result)) {
         items = res.data.result;
+      } else if (Array.isArray(res.data?.data)) {
+        items = res.data.data;
+      } else if (Array.isArray(res.data?.urls)) {
+        items = res.data.urls;
+      } else if (res.data?.data?.carousel_media && Array.isArray(res.data.data.carousel_media)) {
+        items = res.data.data.carousel_media;
       } else if (res.data?.url) {
         items = [res.data.url];
       }
@@ -47,33 +54,42 @@ async function fetchInstagramMedia(rawUrl) {
       if (items && items.length > 0) {
         const parsed = [];
         for (const item of items) {
-          const directUrl = typeof item === "string" ? item : (item.url || item.download_url || item.video || item.image);
+          let directUrl = null;
+          let isVid = false;
+
+          if (typeof item === "string") {
+            directUrl = item;
+          } else if (typeof item === "object") {
+            directUrl = item.url || item.download_url || item.video || item.image || item.display_url || (item.image_versions2?.candidates?.[0]?.url);
+            isVid = item.is_video === true || item.type === "video" || !!item.video_versions;
+          }
+
           if (!directUrl) continue;
-          
-          const isVid = typeof item === "object" && (item.is_video === true || item.type === "video");
           const hasVidExt = /\.(mp4|mkv|mov)(\?|$)/i.test(directUrl);
-          
+
           parsed.push({
             url: directUrl,
             type: (isVid || hasVidExt) ? "video" : "image"
           });
         }
-        if (parsed.length > 0) return parsed;
+
+        // If multiple items (Carousel) found, immediately return all of them!
+        if (parsed.length > 1) {
+          return parsed;
+        }
+
+        // Keep single item as fallback if no API provides full carousel
+        if (parsed.length === 1 && !singleFallback) {
+          singleFallback = parsed;
+        }
       }
     } catch (e) {
       continue;
     }
   }
 
-  // Local fallback if API engines fail
-  if (typeof downloadGram === "function") {
-    const fallback = await downloadGram(cleanUrl);
-    if (fallback && fallback.length) {
-      return fallback.map(u => ({
-        url: u,
-        type: /\.(mp4|mkv|mov)(\?|$)/i.test(u) ? "video" : "image"
-      }));
-    }
+  if (singleFallback && singleFallback.length > 0) {
+    return singleFallback;
   }
 
   throw new Error("Failed to fetch Instagram media");
@@ -115,21 +131,30 @@ Module(
 
       const quotedMessage = message.reply_message ? message.quoted : message.data;
 
-      // Loop and send all photos/videos (supports Carousel / Slide posts)
+      // Loop through all images/videos with safe delay to prevent WhatsApp rate limits
       for (let i = 0; i < mediaList.length; i++) {
         const item = mediaList[i];
-        const caption = mediaList.length > 1 ? `_Item ${i + 1} of ${mediaList.length}_` : "";
+        const caption = mediaList.length > 1 ? `_Slide ${i + 1} of ${mediaList.length}_` : "";
 
-        if (item.type === "video") {
-          await message.sendMessage({ url: item.url }, "video", {
-            caption: caption,
-            quoted: quotedMessage
-          });
-        } else {
-          await message.sendMessage({ url: item.url }, "image", {
-            caption: caption,
-            quoted: quotedMessage
-          });
+        try {
+          if (item.type === "video") {
+            await message.sendMessage({ url: item.url }, "video", {
+              caption: caption,
+              quoted: quotedMessage
+            });
+          } else {
+            await message.sendMessage({ url: item.url }, "image", {
+              caption: caption,
+              quoted: quotedMessage
+            });
+          }
+        } catch (sendErr) {
+          console.error(`Failed to send slide ${i + 1}:`, sendErr.message);
+        }
+
+        // 1.5 seconds delay between each photo
+        if (i < mediaList.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
         }
       }
 
