@@ -19,104 +19,131 @@ async function checkRedirect(url) {
   }
   return url;
 }
+// Carousel & Reel Bulletproof Instagram Extractor
+async function fetchInstagramMedia(rawUrl) {
+  // Remove tracking tokens like ?xtok=..., ?igsh=...
+  const cleanUrl = rawUrl.split("?")[0].replace(/\/+$/, "") + "/";
+  
+  const endpoints = [
+    `https://api.siputzx.my.id/api/d/igdl?url=${encodeURIComponent(cleanUrl)}`,
+    `https://delirius-apiofc.vercel.app/download/instagram?url=${encodeURIComponent(cleanUrl)}`,
+    `https://api.vreden.web.id/api/igdownload?url=${encodeURIComponent(cleanUrl)}`,
+    `https://api.davidcyriltech.my.id/download/instagram?url=${encodeURIComponent(cleanUrl)}`
+  ];
+
+  for (const ep of endpoints) {
+    try {
+      const res = await axios.get(ep, { timeout: 15000 });
+      let items = [];
+
+      if (Array.isArray(res.data?.data)) {
+        items = res.data.data;
+      } else if (Array.isArray(res.data?.result)) {
+        items = res.data.result;
+      } else if (res.data?.url) {
+        items = [res.data.url];
+      }
+
+      if (items && items.length > 0) {
+        const parsed = [];
+        for (const item of items) {
+          const directUrl = typeof item === "string" ? item : (item.url || item.download_url || item.video || item.image);
+          if (!directUrl) continue;
+          
+          const isVid = typeof item === "object" && (item.is_video === true || item.type === "video");
+          const hasVidExt = /\.(mp4|mkv|mov)(\?|$)/i.test(directUrl);
+          
+          parsed.push({
+            url: directUrl,
+            type: (isVid || hasVidExt) ? "video" : "image"
+          });
+        }
+        if (parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      continue;
+    }
+  }
+
+  // Local fallback if API engines fail
+  if (typeof downloadGram === "function") {
+    const fallback = await downloadGram(cleanUrl);
+    if (fallback && fallback.length) {
+      return fallback.map(u => ({
+        url: u,
+        type: /\.(mp4|mkv|mov)(\?|$)/i.test(u) ? "video" : "image"
+      }));
+    }
+  }
+
+  throw new Error("Failed to fetch Instagram media");
+}
+
 Module(
   {
     pattern: "insta ?(.*)",
     fromMe: isFromMe,
-    desc: "Instagram post/reel/tv/highlights downloader - supports multiple links",
-    usage: "insta link(s) or reply to link(s)",
+    desc: "Instagram post/reel/tv/carousel downloader",
+    usage: "insta link(s)",
     use: "download",
   },
   async (message, match) => {
     let mediaLinks = match[1] || message.reply_message?.text;
-    if (mediaLinks.startsWith("ll")) return;
-    if (!mediaLinks)
+    if (!mediaLinks || mediaLinks.startsWith("ll")) {
       return await message.sendReply("_*Need Instagram link(s)*_");
-
-    // extract all urls from the text
-    const allUrls = mediaLinks.match(/\bhttps?:\/\/\S+/gi) || [];
-    if (!allUrls.length)
-      return await message.sendReply("_*Need Instagram link(s)*_");
-
-    // filter and validate instagram urls
-    const instagramUrls = [];
-    const instagramRegex =
-      /(?:https?:\/\/)?(?:www\.)?instagram\.com\/(?:p|s|reel|tv)\/[\w-]+/i;
-
-    for (let url of allUrls) {
-      if (url.includes("gist") || url.includes("youtu") || url.startsWith("ll"))
-        continue;
-
-      url = await checkRedirect(url);
-
-      if (url.includes("stories")) continue;
-
-      if (!url.includes("instagram.com")) continue;
-
-      if (instagramRegex.test(url)) {
-        const mediaId = url.match(/\/([\w-]+)\/?$/)?.[1];
-        if (mediaId && mediaId.length > 20) continue; // skip private accounts
-
-        instagramUrls.push(url);
-      }
     }
 
-    if (!instagramUrls.length)
-      return await message.sendReply("_Need valid Instagram link(s)_");
+    const allUrls = mediaLinks.match(/\bhttps?:\/\/\S+/gi) || [];
+    if (!allUrls.length) return await message.sendReply("_*Need Instagram link(s)*_");
 
+    let targetUrl = allUrls[0];
+    targetUrl = await checkRedirect(targetUrl);
+
+    if (!targetUrl.includes("instagram.com")) {
+      return await message.sendReply("_Need a valid Instagram link!_");
+    }
+
+    let downloadMsg;
     try {
-      const allMediaUrls = [];
-      const quotedMessage = message.reply_message
-        ? message.quoted
-        : message.data;
+      downloadMsg = await message.sendReply("_📥 Downloading Instagram media..._");
+      const mediaList = await fetchInstagramMedia(targetUrl);
 
-      // download from all urls
-      for (const url of instagramUrls) {
-        try {
-          const downloadResult = await downloadGram(url);
-          if (downloadResult && downloadResult.length) {
-            allMediaUrls.push(...downloadResult);
-          }
-        } catch (err) {
-          console.error("Error downloading from:", url, err?.message);
+      if (!mediaList || !mediaList.length) {
+        if (downloadMsg) await message.edit("_No downloadable media found!_", message.jid, downloadMsg.key);
+        return;
+      }
+
+      const quotedMessage = message.reply_message ? message.quoted : message.data;
+
+      // Loop and send all photos/videos (supports Carousel / Slide posts)
+      for (let i = 0; i < mediaList.length; i++) {
+        const item = mediaList[i];
+        const caption = mediaList.length > 1 ? `_Item ${i + 1} of ${mediaList.length}_` : "";
+
+        if (item.type === "video") {
+          await message.sendMessage({ url: item.url }, "video", {
+            caption: caption,
+            quoted: quotedMessage
+          });
+        } else {
+          await message.sendMessage({ url: item.url }, "image", {
+            caption: caption,
+            quoted: quotedMessage
+          });
         }
       }
 
-      if (!allMediaUrls.length)
-        return await message.sendReply(
-          "_Something went wrong, Please try again!_"
-        );
-
-      // send as single media or album
-      if (allMediaUrls.length === 1) {
-        return await message.sendMessage(
-          { url: allMediaUrls[0] },
-          /\.(jpg|jpeg|png|webp|heic)(\?|$)/i.test(allMediaUrls[0])
-            ? "image"
-            : "video",
-          {
-            quoted: quotedMessage,
-          }
-        );
+      if (downloadMsg && downloadMsg.key) {
+        const sock = message.client || message;
+        await sock.sendMessage(message.jid, { delete: downloadMsg.key }).catch(() => {});
       }
-
-      // send as album
-      const albumObject = allMediaUrls.map((mediaUrl) => {
-        return /\.(jpg|jpeg|png|webp|heic)(\?|$)/i.test(mediaUrl)
-          ? { image: mediaUrl }
-          : { video: mediaUrl };
-      });
-      albumObject[0].caption = `_Download complete! (${allMediaUrls.length} items)_`;
-      return await message.client.albumMessage(
-        message.jid,
-        albumObject,
-        message.data
-      );
     } catch (err) {
-      console.error("Insta command error:", err?.message || err);
-      return await message.sendReply(
-        "_Something went wrong, Please try again!_"
-      );
+      console.error("Insta error:", err?.message || err);
+      if (downloadMsg) {
+        await message.edit("_Failed to download! Post might be private or link expired._", message.jid, downloadMsg.key);
+      } else {
+        await message.sendReply("_Something went wrong, Please try again!_");
+      }
     }
   }
 );
