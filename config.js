@@ -19,7 +19,7 @@ function applySQLiteResilience(sequelizeInstance) {
   }
 
   sequelizeInstance.__sqliteGuardsApplied = true;
-  const busyTimeoutMs = parseInt(process.env.SQLITE_BUSY_TIMEOUT || "15000", 10); // modifiable
+  const busyTimeoutMs = parseInt(process.env.SQLITE_BUSY_TIMEOUT || "15000", 10);
   const pragmas = [
     "PRAGMA journal_mode=WAL;",
     "PRAGMA synchronous=NORMAL;",
@@ -69,7 +69,7 @@ function applySQLiteResilience(sequelizeInstance) {
   };
 
   const isWriteQuery = (sql) => {
-    if (!sql || typeof sql !== "string") return true; // default to safe mode
+    if (!sql || typeof sql !== "string") return true;
     const normalizedSql = sql.trim().toUpperCase();
     return (
       normalizedSql.startsWith("INSERT") ||
@@ -83,7 +83,6 @@ function applySQLiteResilience(sequelizeInstance) {
   };
 
   sequelizeInstance.query = function serializedQuery(sql, ...rest) {
-    // only queue writes; reads can run concurrently
     if (!isWriteQuery(sql)) {
       return originalQuery(sql, ...rest);
     }
@@ -171,7 +170,6 @@ const SESSION = SESSION_STRING
 
 const settingsMenu = [
   { title: "PM antispam block", env_var: "PM_ANTISPAM" },
-  //{ title: "Command auto reaction", env_var: "CMD_REACTION" },
   { title: "Auto read all messages", env_var: "READ_MESSAGES" },
   { title: "Auto read command messages", env_var: "READ_COMMAND" },
   { title: "Auto read status updates", env_var: "AUTO_READ_STATUS" },
@@ -188,7 +186,7 @@ const baseConfig = {
   VERSION,
   ALIVE:
     process.env.ALIVE ||
-    "_I am alive! (use .setalive help for custom alive msg)_",
+    "_Hey! OGGY-MD is online and active! (Use .setalive help for custom message)_",
   BLOCK_CHAT: process.env.BLOCK_CHAT || "",
   PM_ANTISPAM: convertToBool(process.env.PM_ANTISPAM) || "",
   ALWAYS_ONLINE: convertToBool(process.env.ALWAYS_ONLINE) || false,
@@ -200,7 +198,7 @@ const baseConfig = {
     ? "Railway"
     : isKoyeb
     ? "Koyeb"
-    : "Other server",
+    : "VPS Server",
   isHeroku,
   isKoyeb,
   isVPS,
@@ -208,7 +206,7 @@ const baseConfig = {
   AUTOMUTE_MSG:
     process.env.AUTOMUTE_MSG || "_Group automuted!_\n_(edit AUTOMUTE_MSG)_",
   ANTIWORD_WARN: process.env.ANTIWORD_WARN || "",
-  ANTI_SPAM: process.env.ANTI_SPAM || "919074309534-1632403322@g.us",
+  ANTI_SPAM: process.env.ANTI_SPAM || "",
   MULTI_HANDLERS: convertToBool(process.env.MULTI_HANDLERS) || false,
   DISABLE_START_MESSAGE:
     convertToBool(process.env.DISABLE_START_MESSAGE) || false,
@@ -236,29 +234,29 @@ const baseConfig = {
     "deb80cd12ababea1c9b9a8ad6ce3fab2",
     "78c84c62b32a88e86daf87dd509a657a",
   ],
-  RG: process.env.RG || "919074309534-1632403322@g.us,120363116963909366@g.us",
-  BOT_INFO: process.env.BOT_INFO || "𝖱𝖺𝗀𝖺𝗇𝗈𝗋𝗄;𝖱𝗒𝗓𝖾𝗇;default",
+  RG: process.env.RG || "",
+  BOT_INFO: process.env.BOT_INFO || "OGGY-MD;ABHIIXZ;default",
   RBG_KEY: process.env.RBG_KEY || "",
   ALLOWED: process.env.ALLOWED || "91,94,2",
   NOT_ALLOWED: process.env.NOT_ALLOWED || "852",
   CHATBOT: process.env.CHATBOT || "off",
   HANDLERS: process.env.HANDLERS || ".,",
-  STICKER_DATA: process.env.STICKER_DATA || "Raganork",
-  BOT_NAME: process.env.BOT_NAME || "Raganork",
+  STICKER_DATA: process.env.STICKER_DATA || "OGGY-MD;ABHIIXZ",
+  BOT_NAME: process.env.BOT_NAME || "OGGY-MD",
   AUDIO_DATA:
     process.env.AUDIO_DATA === undefined || process.env.AUDIO_DATA === "private"
-      ? "default"
+      ? "OGGY-MD;ABHIIXZ"
       : process.env.AUDIO_DATA,
   TAKE_KEY: process.env.TAKE_KEY || "",
   CMD_REACTION: convertToBool(process.env.CMD_REACTION) || false,
-  MODE: process.env.MODE || "private",
+  MODE: process.env.MODE || "public",
   WARN: process.env.WARN || "4",
   ANTILINK_WARN: process.env.ANTILINK_WARN || "",
   ANTI_DELETE: convertToBool(process.env.ANTI_DELETE) || false,
   SUDO: process.env.SUDO || "",
   LANGUAGE: process.env.LANGUAGE || "english",
   AUTO_UPDATE: convertToBool(process.env.AUTO_UPDATE) || true,
-  SUPPORT_GROUP: process.env.SUPPORT_GROUP || "https://t.me/raganork_in",
+  SUPPORT_GROUP: process.env.SUPPORT_GROUP || "",
   ACR_A: "ff489a0160188cf5f0750eaf486eee74",
   ACR_S: "ytu3AdkCu7fkRVuENhXxs9jsOW4YJtDXimAWMpJp",
   settingsMenu,
