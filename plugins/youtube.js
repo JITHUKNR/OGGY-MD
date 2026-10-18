@@ -67,9 +67,14 @@ async function downloadVideo(url, quality = "360p") {
     title = `video_${timestamp}`;
   }
 
-  const res = parseInt(quality) || 360;
   const outTemplate = path.join("/tmp", `yt_vid_${timestamp}.%(ext)s`);
-  const formatSelector = `b[height<=${res}][ext=mp4]/bv*[height<=${res}][ext=mp4]+ba*[ext=m4a]/b[height<=${res}]/bv*+ba/b`;
+  let formatSelector;
+  if (quality === "best") {
+    formatSelector = "bv*[ext=mp4]+ba*[ext=m4a]/b[ext=mp4]/bv*+ba/best";
+  } else {
+    const res = parseInt(quality) || 720;
+    formatSelector = `b[height<=${res}][ext=mp4]/bv*[height<=${res}][ext=mp4]+ba*[ext=m4a]/b[height<=${res}]/bv*+ba/b`;
+  }
 
   await runCmd(`yt-dlp ${YT_FLAGS} -f "${formatSelector}" --merge-output-format mp4 --no-playlist -o "${outTemplate}" "${cleaned}" --force-overwrites`);
 
@@ -326,8 +331,8 @@ Module(
     let videoPath;
 
     try {
-      downloadMsg = await message.sendReply("_Downloading video..._");
-      const result = await downloadVideo(url, "360p");
+      downloadMsg = await message.sendReply("_Downloading video in highest quality..._");
+      const result = await downloadVideo(url, "best");
       videoPath = result.path;
 
       await sock.sendMessage(
