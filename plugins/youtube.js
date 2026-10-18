@@ -4,7 +4,7 @@ const path = require("path");
 const { exec } = require("child_process");
 const axios = require("axios");
 const { spotifyTrack } = require("./utils/misc");
-const { addID3, getBuffer, uploadToCatbox } = require("./utils");
+const { addID3, getBuffer } = require("./utils");
 const { setVar } = require("./manage");
 
 const config = require("../config");
@@ -14,6 +14,7 @@ const fromMe = MODE === "public" ? false : true;
 const VIDEO_SIZE_LIMIT = 150 * 1024 * 1024;
 const COOKIE_PATH = "/root/RAGANORK-BOT/cookies.txt";
 const YT_FLAGS = `--cookies "${COOKIE_PATH}" --extractor-args "youtube:player_client=mweb,web"`;
+const LOCAL_COVER_PATH = "/root/RAGANORK-BOT/audio_cover.jpg";
 
 function runCmd(cmd) {
   return new Promise((resolve, reject) => {
@@ -49,7 +50,7 @@ async function downloadAudio(url) {
   if (files.length === 0) throw new Error("Audio download failed");
   const rawPath = path.join("/tmp", files[0]);
 
-  // Convert to clean MP3 so ID3 tags and WhatsApp playback work 100%
+  // Convert to clean MP3 so tags and WhatsApp playback work 100%
   const mp3Path = path.join("/tmp", `yt_aud_${timestamp}_clean.mp3`);
   try {
     await runCmd(`ffmpeg -i "${rawPath}" -vn -ar 44100 -ac 2 -b:a 192k "${mp3Path}" -y`);
@@ -72,30 +73,49 @@ async function downloadAudio(url) {
   };
 }
 
-// OGGY-MD AUDIO METADATA & COVER HELPER (EMBEDS ALBUM ART INTO MP3)
+// OGGY-MD AUDIO METADATA & COVER HELPER (NO CATBOX - SAVES LOCALLY)
 async function prepareOggyAudio(audioPath, title, customThumbnail = "") {
   let audioBuffer = fs.readFileSync(audioPath);
-  let cleanTitle = (title || "YouTube Audio").replace(/[\\/:*?"<>|]/g, "").substring(0, 40).trim();
+  let cleanTitle = (title || "YouTube Audio").replace(/[\\/:*?"<>|]/g, "").substring(0, 45).trim();
   let artist = config.AUDIO_DATA?.split(";")[1] || "ABHIIXZ";
   let album = "OGGY-MD";
-  let coverUrl = config.AUDIO_COVER || customThumbnail || config.BOT_INFO?.split(";")?.[2] || "https://i.ibb.co/s98DyMMq/NL-1.png";
 
-  try {
-    let imgBuffer = null;
-    if (coverUrl) {
+  let coverBuffer = null;
+
+  // 1. Direct from local saved file (via .setaudiocover)
+  if (fs.existsSync(LOCAL_COVER_PATH)) {
+    try {
+      coverBuffer = fs.readFileSync(LOCAL_COVER_PATH);
+    } catch (e) {}
+  }
+
+  // 2. Fallback to thumbnail from YouTube
+  if (!coverBuffer && customThumbnail) {
+    try {
+      coverBuffer = await getBuffer(customThumbnail);
+    } catch (e) {}
+  }
+
+  // 3. Fallback to default bot logo
+  if (!coverBuffer) {
+    let fallbackUrl = config.AUDIO_COVER || config.BOT_INFO?.split(";")?.[2] || "https://i.ibb.co/s98DyMMq/NL-1.png";
+    if (fallbackUrl && !fallbackUrl.includes("Error")) {
       try {
-        imgBuffer = await getBuffer(coverUrl);
+        coverBuffer = await getBuffer(fallbackUrl);
       } catch (e) {}
     }
+  }
 
-    if (imgBuffer && addID3) {
-      const tagged = await addID3(audioBuffer, cleanTitle, artist, album, imgBuffer);
+  // Embed ID3 Tag into MP3 Buffer
+  try {
+    if (coverBuffer && addID3) {
+      const tagged = await addID3(audioBuffer, cleanTitle, artist, album, coverBuffer);
       if (tagged && Buffer.isBuffer(tagged)) {
         audioBuffer = tagged;
       }
     }
   } catch (e) {
-    console.error("ID3 Tagging failed, using raw buffer:", e);
+    console.error("ID3 Tagging failed:", e);
   }
 
   return {
@@ -103,6 +123,7 @@ async function prepareOggyAudio(audioPath, title, customThumbnail = "") {
     fileName: `${cleanTitle} - OGGY MD.mp3`,
     title: cleanTitle,
     artist: artist,
+    coverBuffer: coverBuffer,
   };
 }
 
@@ -218,16 +239,28 @@ Module(
 
         const oggyAudio = await prepareOggyAudio(audioPath, result.title, result.info?.thumbnail);
 
-        await sock.sendMessage(
-          message.jid,
-          {
-            audio: oggyAudio.buffer,
-            mimetype: "audio/mpeg",
-            ptt: false,
-            fileName: oggyAudio.fileName,
-          },
-          { quoted: message.data }
-        );
+        const msgPayload = {
+          audio: oggyAudio.buffer,
+          mimetype: "audio/mp4",
+          ptt: false,
+          fileName: oggyAudio.fileName,
+        };
+
+        if (oggyAudio.coverBuffer) {
+          msgPayload.contextInfo = {
+            externalAdReply: {
+              title: oggyAudio.title,
+              body: "OGGY-MD • ABHIIXZ",
+              mediaType: 1,
+              thumbnail: oggyAudio.coverBuffer,
+              renderLargerThumbnail: true,
+              showAdAttribution: false,
+              sourceUrl: "https://github.com/JITHUKNR/OGGY-MD",
+            },
+          };
+        }
+
+        await sock.sendMessage(message.jid, msgPayload, { quoted: message.data });
 
         if (downloadMsg && downloadMsg.key) {
           await sock.sendMessage(message.jid, { delete: downloadMsg.key }).catch(() => {});
@@ -494,16 +527,28 @@ Module(
 
       const oggyAudio = await prepareOggyAudio(audioPath, result.title, songThumb);
 
-      await sock.sendMessage(
-        message.jid,
-        {
-          audio: oggyAudio.buffer,
-          mimetype: "audio/mpeg",
-          ptt: false,
-          fileName: oggyAudio.fileName,
-        },
-        { quoted: message.data }
-      );
+      const msgPayload = {
+        audio: oggyAudio.buffer,
+        mimetype: "audio/mp4",
+        ptt: false,
+        fileName: oggyAudio.fileName,
+      };
+
+      if (oggyAudio.coverBuffer) {
+        msgPayload.contextInfo = {
+          externalAdReply: {
+            title: oggyAudio.title,
+            body: "OGGY-MD • ABHIIXZ",
+            mediaType: 1,
+            thumbnail: oggyAudio.coverBuffer,
+            renderLargerThumbnail: true,
+            showAdAttribution: false,
+            sourceUrl: "https://github.com/JITHUKNR/OGGY-MD",
+          },
+        };
+      }
+
+      await sock.sendMessage(message.jid, msgPayload, { quoted: message.data });
 
       if (downloadMsg && downloadMsg.key) {
         await sock.sendMessage(message.jid, { delete: downloadMsg.key }).catch(() => {});
@@ -518,7 +563,7 @@ Module(
 );
 
 // ============================================================
-// 7. INTERACTIVE TEXT LISTENER (NUMBERS & AUDIO/VIDEO REPLIES)
+// 7. INTERACTIVE TEXT LISTENER
 // ============================================================
 Module(
   {
@@ -534,7 +579,7 @@ Module(
     const repliedText = message.reply_message.message;
     const sock = message.client || message;
 
-    // STEP A: SELECTION FROM .song (REPLY WITH 1-10)
+    // STEP A: SELECTION FROM .song
     if (repliedText.includes("OGGY-MD MUSIC") || (repliedText.includes("YouTube Search Results") && repliedText.includes("to download audio"))) {
       if (selectedNumber < 1 || selectedNumber > 10) {
         return await message.sendReply("_Please select a number between 1-10_");
@@ -556,16 +601,28 @@ Module(
 
           const oggyAudio = await prepareOggyAudio(audioPath, selectedVideo.title, selectedVideo.thumbnail);
 
-          await sock.sendMessage(
-            message.jid,
-            {
-              audio: oggyAudio.buffer,
-              mimetype: "audio/mpeg",
-              ptt: false,
-              fileName: oggyAudio.fileName,
-            },
-            { quoted: message.data }
-          );
+          const msgPayload = {
+            audio: oggyAudio.buffer,
+            mimetype: "audio/mp4",
+            ptt: false,
+            fileName: oggyAudio.fileName,
+          };
+
+          if (oggyAudio.coverBuffer) {
+            msgPayload.contextInfo = {
+              externalAdReply: {
+                title: oggyAudio.title,
+                body: "OGGY-MD • ABHIIXZ",
+                mediaType: 1,
+                thumbnail: oggyAudio.coverBuffer,
+                renderLargerThumbnail: true,
+                showAdAttribution: false,
+                sourceUrl: "https://github.com/JITHUKNR/OGGY-MD",
+              },
+            };
+          }
+
+          await sock.sendMessage(message.jid, msgPayload, { quoted: message.data });
 
           if (downloadMsg && downloadMsg.key) {
             await sock.sendMessage(message.jid, { delete: downloadMsg.key }).catch(() => {});
@@ -578,7 +635,7 @@ Module(
         await message.sendReply("_Failed to process your selection._");
       }
     }
-    // STEP B: SELECTION FROM .yts (REPLY WITH 1-10 TO SEE DETAILS CARD)
+    // STEP B: SELECTION FROM .yts
     else if (repliedText.includes("OGGY-MD SEARCH") || (repliedText.includes("YouTube Search Results") && repliedText.includes("see video details"))) {
       if (selectedNumber < 1 || selectedNumber > 10) return;
 
@@ -627,16 +684,29 @@ Module(
             const result = await downloadAudio(url);
             const oggyAudio = await prepareOggyAudio(result.path, result.title);
 
-            await sock.sendMessage(
-              message.jid,
-              {
-                audio: oggyAudio.buffer,
-                mimetype: "audio/mpeg",
-                ptt: false,
-                fileName: oggyAudio.fileName,
-              },
-              { quoted: message.data }
-            );
+            const msgPayload = {
+              audio: oggyAudio.buffer,
+              mimetype: "audio/mp4",
+              ptt: false,
+              fileName: oggyAudio.fileName,
+            };
+
+            if (oggyAudio.coverBuffer) {
+              msgPayload.contextInfo = {
+                externalAdReply: {
+                  title: oggyAudio.title,
+                  body: "OGGY-MD • ABHIIXZ",
+                  mediaType: 1,
+                  thumbnail: oggyAudio.coverBuffer,
+                  renderLargerThumbnail: true,
+                  showAdAttribution: false,
+                  sourceUrl: "https://github.com/JITHUKNR/OGGY-MD",
+                },
+              };
+            }
+
+            await sock.sendMessage(message.jid, msgPayload, { quoted: message.data });
+
             if (downloadMsg && downloadMsg.key) {
               await sock.sendMessage(message.jid, { delete: downloadMsg.key }).catch(() => {});
             }
@@ -667,7 +737,7 @@ Module(
         }
       } catch (e) {}
     }
-    // STEP D: YTV QUALITY PICKER (1: 360p, 2: 720p, 3: Audio)
+    // STEP D: YTV QUALITY PICKER
     else if (repliedText.includes("Select Video Quality") || (repliedText.includes("OGGY-MD VIDEO") && repliedText.includes("Reply with a number"))) {
       try {
         const idMatch = repliedText.match(/\(([\w-]{11})\)/);
@@ -763,16 +833,28 @@ Module(
       const result = await downloadAudio(results[0].url);
       const oggyAudio = await prepareOggyAudio(result.path, title, results[0].thumbnail);
 
-      await sock.sendMessage(
-        message.jid,
-        {
-          audio: oggyAudio.buffer,
-          mimetype: "audio/mpeg",
-          ptt: false,
-          fileName: oggyAudio.fileName,
-        },
-        { quoted: message.data }
-      );
+      const msgPayload = {
+        audio: oggyAudio.buffer,
+        mimetype: "audio/mp4",
+        ptt: false,
+        fileName: oggyAudio.fileName,
+      };
+
+      if (oggyAudio.coverBuffer) {
+        msgPayload.contextInfo = {
+          externalAdReply: {
+            title: oggyAudio.title,
+            body: "OGGY-MD • ABHIIXZ",
+            mediaType: 1,
+            thumbnail: oggyAudio.coverBuffer,
+            renderLargerThumbnail: true,
+            showAdAttribution: false,
+            sourceUrl: "https://github.com/JITHUKNR/OGGY-MD",
+          },
+        };
+      }
+
+      await sock.sendMessage(message.jid, msgPayload, { quoted: message.data });
 
       if (downloadMsg && downloadMsg.key) {
         await sock.sendMessage(message.jid, { delete: downloadMsg.key }).catch(() => {});
@@ -785,41 +867,58 @@ Module(
 );
 
 // ============================================================
-// 9. WHATSAPP-ൽ നിന്ന് തന്നെ ലോഗോ മാറ്റാനുള്ള കമാൻഡ് (.setaudiocover)
+// 9. WHATSAPP വഴി ലോക്കലായി ലോഗോ സേവ് ചെയ്യുന്ന കമാൻഡ് (.setaudiocover)
 // ============================================================
 Module(
   {
     pattern: "setaudiocover ?(.*)",
-    fromMe: true,
-    desc: "Set custom thumbnail/logo for audio downloads by replying to an image",
+    fromMe: false,
+    desc: "Set custom thumbnail/logo for audio downloads directly on server",
     use: "owner",
   },
   async (message) => {
-    if (!message.reply_message?.image) {
+    if (!message.fromOwner && !message.fromMe) return;
+
+    const isImageReply = message.reply_message && (message.reply_message.image || message.reply_message.sticker);
+    const isDirectImage = message.image;
+
+    if (!isImageReply && !isDirectImage) {
       return await message.sendReply(
-        "╭───〔 ⚡ *OGGY-MD AUDIO COVER* 〕───\n│ ⚠️ *ഒരു ഫോട്ടോയ്ക്ക് റിപ്ലൈ ആയി ഈ കമാൻഡ് അടിക്കുക!*\n│ 💡 *ഉദാഹരണം:* ലോഗോ അയക്കുക ➔ Reply: `.setaudiocover`\n╰────────────────────────"
+        "╭───〔 ⚡ *OGGY-MD AUDIO COVER* 〕───\n│ ⚠️ *ഫോട്ടോയ്ക്ക് റിപ്ലൈ ആയി `.setaudiocover` എന്ന് അയക്കുക!*\n╰────────────────────────"
       );
     }
 
     try {
-      const waitMsg = await message.sendReply("_⚡ Uploading and setting custom audio cover..._");
-      const imgPath = await message.reply_message.download();
-      const upload = await uploadToCatbox(imgPath);
+      const waitMsg = await message.sendReply("_⚡ സേവ് ചെയ്യുന്നു, ദയവായി കാത്തിരിക്കൂ..._");
 
-      try { fs.unlinkSync(imgPath); } catch (e) {}
+      let dl;
+      if (isImageReply) {
+        dl = await message.reply_message.download();
+      } else {
+        dl = await message.download();
+      }
 
-      if (upload && upload.url) {
-        await setVar("AUDIO_COVER", upload.url);
-        config.AUDIO_COVER = upload.url;
+      let imgBuffer = null;
+      if (typeof dl === "string" && fs.existsSync(dl)) {
+        imgBuffer = fs.readFileSync(dl);
+        try { fs.unlinkSync(dl); } catch (e) {}
+      } else if (Buffer.isBuffer(dl)) {
+        imgBuffer = dl;
+      }
+
+      if (imgBuffer && Buffer.isBuffer(imgBuffer)) {
+        // Direct local save - no Catbox dependency!
+        fs.writeFileSync(LOCAL_COVER_PATH, imgBuffer);
         return await message.edit(
-          `╭───〔 ⚡ *OGGY-MD SUCCESS* 〕───\n│ ✅ *പുതിയ ഓഡിയോ ലോഗോ വിജയകരമായി സെറ്റ് ചെയ്തു!*\n│ 🔗 *URL:* ${upload.url}\n│ 💡 ഇനി ഡൗൺലോഡ് ചെയ്യുന്ന പാട്ടുകൾക്ക് ഈ ലോഗോ വരും.\n╰────────────────────────`,
+          "╭───〔 ⚡ *OGGY-MD COVER SET* 〕───\n│ ✅ *നിങ്ങളുടെ ABHIIXZ ലോഗോ വിജയകരമായി സേവ് ചെയ്തു!*\n│ 🎵 ഇനി ഡൗൺലോഡ് ചെയ്യുന്ന പാട്ടുകൾക്ക് ഈ ലോഗോയും\n│ *OGGY-MD • ABHIIXZ* കാർഡും തെളിയും!\n╰────────────────────────",
           message.jid,
           waitMsg.key
         );
       } else {
-        return await message.edit("_❌ ഫോട്ടോ അപ്‌ലോഡ് ചെയ്യാൻ കഴിഞ്ഞില്ല!_", message.jid, waitMsg.key);
+        return await message.edit("_❌ ഫോട്ടോ ഡൗൺലോഡ് ചെയ്യാൻ കഴിഞ്ഞില്ല!_", message.jid, waitMsg.key);
       }
     } catch (err) {
+      console.error("Cover save error:", err);
       return await message.sendReply("_❌ എറർ സംഭവിച്ചു. വീണ്ടും ശ്രമിക്കുക!_");
     }
   }
@@ -827,15 +926,16 @@ Module(
 
 // ============================================================
 // 10. ഓഡിയോ വിവരങ്ങൾ മാറ്റാനുള്ള കമാൻഡ് (.setaudiodata)
-// ==========================================
+// ============================================================
 Module(
   {
     pattern: "setaudiodata ?(.*)",
-    fromMe: true,
+    fromMe: false,
     desc: "Set default audio title and artist name",
     use: "owner",
   },
   async (message, match) => {
+    if (!message.fromOwner && !message.fromMe) return;
     const input = match[1]?.trim();
     if (!input) {
       return await message.sendReply(
