@@ -5,15 +5,15 @@ const {
   parseWelcomeMessage,
   sendWelcomeMessage,
 } = require("./utils/welcome-parser");
-var handler = HANDLERS !== "false" ? HANDLERS.split("")[0] : "";
+var handler = HANDLERS !== "false" ? HANDLERS.split("")[0] : ".";
 
 Module(
   {
     pattern: "welcome ?(.*)",
     fromMe: false,
-    desc: "Set welcome message for group. Use placeholders: $mention, $user, $group, $desc, $count, $pp, $gpp, $date, $time",
+    desc: "Set welcome message for group. Supports OGGY-MD placeholders.",
     usage:
-      ".welcome Hey $mention, welcome to $group! $pp\n.welcome on/off (to enable/disable)\n.welcome get (to view current message)\n.welcome del (to delete)",
+      ".welcome Hey $mention, welcome to $group!$pp\n.welcome on/off\n.welcome get\n.welcome del",
     use: "group",
   },
   async (message, match) => {
@@ -21,68 +21,70 @@ Module(
       ? await isAdmin(message, message.sender)
       : false;
     if (!message.fromOwner && !adminAccess) return;
+
     const input = match[1]?.toLowerCase();
     if (!input) {
-      return await message.sendReply(`*Welcome Message Setup*
-
-*Usage:*
-• \`.welcome <message>\` - Set welcome message
-• \`.welcome on/off\` - Enable/disable welcome
-• \`.welcome get\` - View current message
-• \`.welcome del\` - Delete welcome message
-• \`.welcome status\` - Show all groups status (owner only)
-• \`.welcome help\` - Show detailed help with examples
-
-*Placeholders:*
-• \`$mention\` - Mention the user
-• \`$user\` - User's name
-• \`$group\` - Group name
-• \`$desc\` - Group description
-• \`$count\` - Member count
-• \`$pp\` - User's profile picture
-• \`$gpp\` - Group profile picture
-• \`$date\` - Current date
-• \`$time\` - Current time
-
-*Example:*
-\`.welcome Hey $mention! Welcome to $group 🎉 $pp\`
-\`.welcome Welcome $user to our amazing group! We now have $count members! $gpp\``);
+      return await message.sendReply(
+        `╭━━━〔 ⚡ *OGGY-MD WELCOME* ⚡ 〕━━━╮\n` +
+        `┃ ⚙️ *Setup Commands:*\n` +
+        `┃ ◦ \`${handler}welcome <text>\` - Set welcome msg\n` +
+        `┃ ◦ \`${handler}welcome on/off\` - Toggle welcome\n` +
+        `┃ ◦ \`${handler}welcome get\` - View current msg\n` +
+        `┃ ◦ \`${handler}welcome del\` - Delete msg\n` +
+        `┃ ◦ \`${handler}welcome status\` - View all groups\n` +
+        `┃ ◦ \`${handler}welcome help\` - View placeholders\n` +
+        `╰━━━━━━━━━━━━━━━━━━━━╯\n\n` +
+        `╭───〔 💡 *QUICK EXAMPLE* 〕───\n` +
+        `│ \`${handler}welcome Hey$mention! Welcome to $group 🎉 $pp\`\n` +
+        `╰────────────────────────`
+      );
     }
+
     if (input === "on") {
       const current = await welcome.get(message.jid);
       if (!current) {
         return await message.sendReply(
-          "_No welcome message set! Set one first using:_\n*.welcome <your message>*"
+          "╭───〔 ⚡ *OGGY-MD* 〕───\n│ ⚠️ *No welcome message set yet!*\n│ 💡 Use: `" + handler + "welcome <text>`\n╰────────────────────────"
         );
       }
       await welcome.toggle(message.jid, true);
-      return await message.sendReply("_Welcome messages enabled!_ ✅");
+      return await message.sendReply(
+        "╭───〔 ⚡ *OGGY-MD SYSTEM* 〕───\n│ ✅ *Welcome messages enabled for this group!*\n╰────────────────────────"
+      );
     }
+
     if (input === "off") {
       await welcome.toggle(message.jid, false);
-      return await message.sendReply("_Welcome messages disabled!_ ❌");
+      return await message.sendReply(
+        "╭───〔 ⚡ *OGGY-MD SYSTEM* 〕───\n│ ❌ *Welcome messages disabled for this group!*\n╰────────────────────────"
+      );
     }
+
     if (input === "get") {
       const current = await welcome.get(message.jid);
       if (!current) {
         return await message.sendReply(
-          "_No welcome message set for this group!_"
+          "╭───〔 ⚡ *OGGY-MD* 〕───\n│ ⚠️ *No welcome message set for this group!*\n╰────────────────────────"
         );
       }
       return await message.sendReply(
-        `*Current Welcome Message:*\n\n${current.message}\n\n*Status:* ${
-          current.enabled ? "Enabled ✅" : "Disabled ❌"
-        }`
+        `╭━━━〔 ⚡ *CURRENT WELCOME* 〕━━━╮\n` +
+        `┃ 📊 *Status:* ${current.enabled ? "✅ Enabled" : "❌ Disabled"}\n` +
+        `╰━━━━━━━━━━━━━━━━━━━━╯\n\n` +
+        `*Message Preview:*\n${current.message}`
       );
     }
+
     if (input === "del" || input === "delete") {
       const deleted = await welcome.delete(message.jid);
       if (deleted) {
         return await message.sendReply(
-          "_Welcome message deleted successfully!_ 🗑️"
+          "╭───〔 ⚡ *OGGY-MD SYSTEM* 〕───\n│ 🗑️ *Welcome message deleted successfully!*\n╰────────────────────────"
         );
       }
-      return await message.sendReply("_No welcome message found to delete!_");
+      return await message.sendReply(
+        "╭───〔 ⚡ *OGGY-MD* 〕───\n│ ⚠️ *No welcome message found to delete!*\n╰────────────────────────"
+      );
     }
 
     if (input === "status") {
@@ -94,55 +96,43 @@ Module(
 
         if (!welcomeData.length && !goodbyeData.length) {
           return await message.sendReply(
-            "_No welcome or goodbye messages configured in any groups!_"
+            "╭───〔 ⚡ *OGGY-MD* 〕───\n│ ℹ️ *No welcome/goodbye configured in any groups!*\n╰────────────────────────"
           );
         }
 
-        let statusText = "*🎉 WELCOME & GOODBYE STATUS 🎉*\n\n";
+        let statusText = `╭━━━〔 ⚡ *OGGY-MD GROUP STATUS* ⚡ 〕━━━╮\n\n`;
 
         if (welcomeData.length > 0) {
-          statusText += "*📥 WELCOME MESSAGES:*\n";
+          statusText += `*📥 WELCOME ACTIVE GROUPS:*\n`;
           for (let i = 0; i < welcomeData.length; i++) {
             const data = welcomeData[i];
             try {
               const groupMeta = await message.client.groupMetadata(data.jid);
               const groupName = groupMeta.subject || "Unknown Group";
-              const status = data.enabled ? "✅ Enabled" : "❌ Disabled";
-              statusText += `${
-                i + 1
-              }. *${groupName}*\n   Status: ${status}\n   Preview: ${data.message.substring(
-                0,
-                50
-              )}${data.message.length > 50 ? "..." : ""}\n\n`;
+              const status = data.enabled ? "✅" : "❌";
+              statusText += `│ ${i + 1}. *${groupName}* [${status}]\n`;
             } catch {
-              statusText += `${i + 1}. *Unknown Group*\n   Status: ${
-                data.enabled ? "✅ Enabled" : "❌ Disabled"
-              }\n\n`;
+              statusText += `│ ${i + 1}. *Unknown Group* [${data.enabled ? "✅" : "❌"}]\n`;
             }
           }
+          statusText += `\n`;
         }
 
         if (goodbyeData.length > 0) {
-          statusText += "*📤 GOODBYE MESSAGES:*\n";
+          statusText += `*📤 GOODBYE ACTIVE GROUPS:*\n`;
           for (let i = 0; i < goodbyeData.length; i++) {
             const data = goodbyeData[i];
             try {
               const groupMeta = await message.client.groupMetadata(data.jid);
               const groupName = groupMeta.subject || "Unknown Group";
-              const status = data.enabled ? "✅ Enabled" : "❌ Disabled";
-              statusText += `${
-                i + 1
-              }. *${groupName}*\n   Status: ${status}\n   Preview: ${data.message.substring(
-                0,
-                50
-              )}${data.message.length > 50 ? "..." : ""}\n\n`;
+              const status = data.enabled ? "✅" : "❌";
+              statusText += `│ ${i + 1}. *${groupName}* [${status}]\n`;
             } catch {
-              statusText += `${i + 1}. *Unknown Group*\n   Status: ${
-                data.enabled ? "✅ Enabled" : "❌ Disabled"
-              }\n\n`;
+              statusText += `│ ${i + 1}. *Unknown Group* [${data.enabled ? "✅" : "❌"}]\n`;
             }
           }
         }
+        statusText += `╰━━━━━━━━━━━━━━━━━━━━╯`;
 
         await message.sendReply(statusText);
       } catch (error) {
@@ -153,87 +143,54 @@ Module(
     }
 
     if (input === "help") {
-      const helpText = `*🎉 WELCOME & GOODBYE SYSTEM HELP 🎉*
-
-*📝 BASIC COMMANDS:*
-• \`.welcome <message>\` - Set welcome message
-• \`.goodbye <message>\` - Set goodbye message
-• \`.welcome on/off\` - Enable/disable welcome
-• \`.goodbye on/off\` - Enable/disable goodbye
-• \`.welcome get\` - View current welcome
-• \`.goodbye get\` - View current goodbye
-• \`.welcome del\` - Delete welcome message
-• \`.goodbye del\` - Delete goodbye message
-• \`.welcome status\` - Show all groups status (owner only)
-• \`.welcome help\` - Show this detailed help
-
-*🧪 TEST COMMANDS:*
-• \`.testwelcome\` - Test current welcome message
-• \`.testgoodbye\` - Test current goodbye message
-
-*📋 AVAILABLE PLACEHOLDERS:*
-• \`$mention\` - @mentions the user
-• \`$user\` - User's display name
-• \`$group\` - Group name
-• \`$desc\` - Group description
-• \`$count\` - Current member count
-• \`$pp\` - User's profile picture (fallback to group pic if privacy)
-• \`$gpp\` - Group profile picture
-• \`$date\` - Current date
-• \`$time\` - Current time
-
-*💡 EXAMPLE MESSAGES:*
-
-*Welcome Examples:*
-\`Hey $mention! 👋 Welcome to $group! 🎉\`
-
-\`Welcome $user to our amazing community! $pp
-We now have $count members! 🚀\`
-
-\`🎊 $mention joined $group!
-📖 Description: $desc
-👥 Members: $count
-📅 Joined on: $date at $time $gpp\`
-
-*Goodbye Examples:*
-\`Goodbye $mention! 👋 Thanks for being part of $group! 💔\`
-
-\`$user left the group 😢 $pp
-We now have $count members remaining.\`
-
-\`📤 $mention has left $group
-📅 Left on: $date at $time
-💭 We'll miss you! $gpp\`
-
-*⚠️ NOTES:*
-• Messages are limited to 2000 characters
-• \`$pp\` and \`$gpp\` will send images with caption
-• If user's profile pic fails, group pic is used as fallback
-• Use quotes for multi-word messages
-• Admin access required to set messages
-• Messages work for both joins and leaves`;
+      const helpText = `╭━━━〔 ⚡ *OGGY-MD WELCOME HELP* ⚡ 〕━━━╮\n` +
+        `┃ 📝 *Available Placeholders:*\n` +
+        `┃ ◦ \`$mention\` - Mentions user\n` +
+        `┃ ◦ \`$user\` - User's name\n` +
+        `┃ ◦ \`$group\` - Group name\n` +
+        `┃ ◦ \`$desc\` - Group description\n` +
+        `┃ ◦ \`$count\` - Member count\n` +
+        `┃ ◦ \`$pp\` - User's profile pic\n` +
+        `┃ ◦ \`$gpp\` - Group profile pic\n` +
+        `┃ ◦ \`$date\` - Current date\n` +
+        `┃ ◦ \`$time\` - Current time\n` +
+        `╰━━━━━━━━━━━━━━━━━━━━╯\n\n` +
+        `*💡 Stylish Examples:*\n` +
+        `╭───〔 *Example 1* 〕───\n` +
+        `│ \`Hey $mention! Welcome to $group 🎉 $pp\`\n` +
+        `╰────────────────────────\n` +
+        `╭───〔 *Example 2* 〕───\n` +
+        `│ \`Welcome $user to our family! We now have $count members!$gpp\`\n` +
+        `╰────────────────────────\n\n` +
+        `_Tip: Use \`${handler}testwelcome\` to test._`;
 
       return await message.sendReply(helpText);
     }
+
     const welcomeMessage = match[1];
     if (welcomeMessage.length > 2000) {
       return await message.sendReply(
-        "_Welcome message is too long! Please keep it under 2000 characters._"
+        "╭───〔 ⚡ *OGGY-MD* 〕───\n│ ⚠️ *Message too long! (Max 2000 characters)*\n╰────────────────────────"
       );
     }
     await welcome.set(message.jid, welcomeMessage);
     await message.sendReply(
-      `_Welcome message set successfully!_ ✅\n\n*Preview:*\n${welcomeMessage}\n\n💡 _Tip: Use_ \`.testwelcome\` _to test your message!_`
+      `╭───〔 ⚡ *OGGY-MD WELCOME SET* 〕───\n` +
+      `│ ✅ *Welcome message configured successfully!*\n` +
+      `╰────────────────────────\n\n` +
+      `*Preview:*\n${welcomeMessage}\n\n` +
+      `💡 _Tip: Use \`${handler}testwelcome\` to see how it looks!_`
     );
   }
 );
+
 Module(
   {
     pattern: "goodbye ?(.*)",
     fromMe: false,
-    desc: "Set goodbye message for group. Use placeholders: $mention, $user, $group, $desc, $count, $pp, $gpp, $date, $time",
+    desc: "Set goodbye message for group. Supports OGGY-MD placeholders.",
     usage:
-      ".goodbye Bye $mention, thanks for being part of $group! $pp\n.goodbye on/off (to enable/disable)\n.goodbye get (to view current message)\n.goodbye del (to delete)",
+      ".goodbye Bye $mention, thanks for being part of $group!$pp\n.goodbye on/off\n.goodbye get\n.goodbye del",
     use: "group",
   },
   async (message, match) => {
@@ -241,76 +198,87 @@ Module(
       ? await isAdmin(message, message.sender)
       : false;
     if (!message.fromOwner && !adminAccess) return;
+
     const input = match[1]?.toLowerCase();
     if (!input) {
-      return await message.sendReply(`*Goodbye Message Setup*
-*Usage:*
-• \`.goodbye <message>\` - Set goodbye message
-• \`.goodbye on/off\` - Enable/disable goodbye
-• \`.goodbye get\` - View current message
-• \`.goodbye del\` - Delete goodbye message
-*Placeholders:*
-• \`$mention\` - Mention the user
-• \`$user\` - User's name  
-• \`$group\` - Group name
-• \`$desc\` - Group description
-• \`$count\` - Member count
-• \`$pp\` - User's profile picture
-• \`$gpp\` - Group profile picture
-• \`$date\` - Current date
-• \`$time\` - Current time
-*Example:*
-\`.goodbye Bye $mention! Thanks for being part of $group 👋 $pp\`
-\`.goodbye $user left the group. We now have $count members. $gpp\``);
+      return await message.sendReply(
+        `╭━━━〔 ⚡ *OGGY-MD GOODBYE* ⚡ 〕━━━╮\n` +
+        `┃ ⚙️ *Setup Commands:*\n` +
+        `┃ ◦ \`${handler}goodbye <text>\` - Set goodbye msg\n` +
+        `┃ ◦ \`${handler}goodbye on/off\` - Toggle goodbye\n` +
+        `┃ ◦ \`${handler}goodbye get\` - View current msg\n` +
+        `┃ ◦ \`${handler}goodbye del\` - Delete msg\n` +
+        `╰━━━━━━━━━━━━━━━━━━━━╯\n\n` +
+        `╭───〔 💡 *QUICK EXAMPLE* 〕───\n` +
+        `│ \`${handler}goodbye Goodbye$mention! Thanks for being part of $group 👋 $pp\`\n` +
+        `╰────────────────────────`
+      );
     }
+
     if (input === "on") {
       const current = await goodbye.get(message.jid);
       if (!current) {
         return await message.sendReply(
-          "_No goodbye message set! Set one first using:_\n*.goodbye <your message>*"
+          "╭───〔 ⚡ *OGGY-MD* 〕───\n│ ⚠️ *No goodbye message set yet!*\n│ 💡 Use: `" + handler + "goodbye <text>`\n╰────────────────────────"
         );
       }
       await goodbye.toggle(message.jid, true);
-      return await message.sendReply("_Goodbye messages enabled!_ ✅");
+      return await message.sendReply(
+        "╭───〔 ⚡ *OGGY-MD SYSTEM* 〕───\n│ ✅ *Goodbye messages enabled for this group!*\n╰────────────────────────"
+      );
     }
+
     if (input === "off") {
       await goodbye.toggle(message.jid, false);
-      return await message.sendReply("_Goodbye messages disabled!_ ❌");
+      return await message.sendReply(
+        "╭───〔 ⚡ *OGGY-MD SYSTEM* 〕───\n│ ❌ *Goodbye messages disabled for this group!*\n╰────────────────────────"
+      );
     }
+
     if (input === "get") {
       const current = await goodbye.get(message.jid);
       if (!current) {
         return await message.sendReply(
-          "_No goodbye message set for this group!_"
+          "╭───〔 ⚡ *OGGY-MD* 〕───\n│ ⚠️ *No goodbye message set for this group!*\n╰────────────────────────"
         );
       }
       return await message.sendReply(
-        `*Current Goodbye Message:*\n\n${current.message}\n\n*Status:* ${
-          current.enabled ? "Enabled ✅" : "Disabled ❌"
-        }`
+        `╭━━━〔 ⚡ *CURRENT GOODBYE* 〕━━━╮\n` +
+        `┃ 📊 *Status:* ${current.enabled ? "✅ Enabled" : "❌ Disabled"}\n` +
+        `╰━━━━━━━━━━━━━━━━━━━━╯\n\n` +
+        `*Message Preview:*\n${current.message}`
       );
     }
+
     if (input === "del" || input === "delete") {
       const deleted = await goodbye.delete(message.jid);
       if (deleted) {
         return await message.sendReply(
-          "_Goodbye message deleted successfully!_ 🗑️"
+          "╭───〔 ⚡ *OGGY-MD SYSTEM* 〕───\n│ 🗑️ *Goodbye message deleted successfully!*\n╰────────────────────────"
         );
       }
-      return await message.sendReply("_No goodbye message found to delete!_");
+      return await message.sendReply(
+        "╭───〔 ⚡ *OGGY-MD* 〕───\n│ ⚠️ *No goodbye message found to delete!*\n╰────────────────────────"
+      );
     }
+
     const goodbyeMessage = match[1];
     if (goodbyeMessage.length > 2000) {
       return await message.sendReply(
-        "_Goodbye message is too long! Please keep it under 2000 characters._"
+        "╭───〔 ⚡ *OGGY-MD* 〕───\n│ ⚠️ *Message too long! (Max 2000 characters)*\n╰────────────────────────"
       );
     }
     await goodbye.set(message.jid, goodbyeMessage);
     await message.sendReply(
-      `_Goodbye message set successfully!_ ✅\n\n*Preview:*\n${goodbyeMessage}\n\n💡 _Tip: Use_ \`.testgoodbye\` _to test your message!_`
+      `╭───〔 ⚡ *OGGY-MD GOODBYE SET* 〕───\n` +
+      `│ ✅ *Goodbye message configured successfully!*\n` +
+      `╰────────────────────────\n\n` +
+      `*Preview:*\n${goodbyeMessage}\n\n` +
+      `💡 _Tip: Use \`${handler}testgoodbye\` to see how it looks!_`
     );
   }
 );
+
 Module(
   {
     pattern: "testwelcome ?(.*)",
@@ -319,15 +287,16 @@ Module(
     usage: ".testwelcome",
     use: "group",
   },
-  async (message, match) => {
+  async (message) => {
     let adminAccess = ADMIN_ACCESS
       ? await isAdmin(message, message.sender)
       : false;
     if (!message.fromOwner && !adminAccess) return;
+
     const welcomeData = await welcome.get(message.jid);
     if (!welcomeData || !welcomeData.enabled) {
       return await message.sendReply(
-        "_No welcome message set or welcome is disabled for this group!_"
+        "╭───〔 ⚡ *OGGY-MD* 〕───\n│ ⚠️ *No welcome message set or welcome is disabled!* \n╰────────────────────────"
       );
     }
     const parsedMessage = await parseWelcomeMessage(
@@ -336,13 +305,14 @@ Module(
       [message.sender]
     );
     if (parsedMessage) {
-      await message.sendReply("*Testing Welcome Message:*");
+      await message.sendReply("╭───〔 ⚡ *TESTING WELCOME* 〕───\n╰────────────────────────");
       await sendWelcomeMessage(message, parsedMessage);
     } else {
       await message.sendReply("_Error parsing welcome message!_");
     }
   }
 );
+
 Module(
   {
     pattern: "testgoodbye ?(.*)",
@@ -351,15 +321,16 @@ Module(
     usage: ".testgoodbye",
     use: "group",
   },
-  async (message, match) => {
+  async (message) => {
     let adminAccess = ADMIN_ACCESS
       ? await isAdmin(message, message.sender)
       : false;
     if (!message.fromOwner && !adminAccess) return;
+
     const goodbyeData = await goodbye.get(message.jid);
     if (!goodbyeData || !goodbyeData.enabled) {
       return await message.sendReply(
-        "_No goodbye message set or goodbye is disabled for this group!_"
+        "╭───〔 ⚡ *OGGY-MD* 〕───\n│ ⚠️ *No goodbye message set or goodbye is disabled!* \n╰────────────────────────"
       );
     }
     const parsedMessage = await parseWelcomeMessage(
@@ -368,7 +339,7 @@ Module(
       [message.sender]
     );
     if (parsedMessage) {
-      await message.sendReply("*Testing Goodbye Message:*");
+      await message.sendReply("╭───〔 ⚡ *TESTING GOODBYE* 〕───\n╰────────────────────────");
       await sendWelcomeMessage(message, parsedMessage);
     } else {
       await message.sendReply("_Error parsing goodbye message!_");
