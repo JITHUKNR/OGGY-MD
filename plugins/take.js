@@ -9,6 +9,7 @@ const {
 const { Module } = require("../main");
 let config = require("../config");
 let fs = require("fs");
+
 Module(
   {
     pattern: "take ?(.*)",
@@ -21,57 +22,71 @@ Module(
     var audiomsg = m.reply_message.audio;
     var stickermsg = m.reply_message.sticker;
     var q = await m.reply_message.download();
+
     if (stickermsg) {
-      if (match[1] !== "") {
-        var exif = {
-          author: match[1].includes(";") ? match[1].split(";")[1] : "",
-          packname: match[1].includes(";") ? match[1].split(";")[0] : match[1],
-          categories: config.STICKER_DATA.split(";")[2] || "😂",
-          android: "https://github.com/souravkl11/raganork-md/",
-          ios: "https://github.com/souravkl11/raganork-md/",
-        };
-      } else {
-        var exif = {
-          author: config.STICKER_DATA.split(";")[1] || "",
-          packname: config.STICKER_DATA.split(";")[0] || "",
-          categories: config.STICKER_DATA.split(";")[2] || "😂",
-          android: "https://github.com/souravkl11/raganork-md/",
-          ios: "https://github.com/souravkl11/raganork-md/",
-        };
+      const defaultPack = config.STICKER_DATA ? config.STICKER_DATA.split(";")[0] : "OGGY-MD";
+      const defaultAuthor = config.STICKER_DATA ? config.STICKER_DATA.split(";")[1] : "ABHIIXZ";
+      const defaultCat = config.STICKER_DATA ? config.STICKER_DATA.split(";")[2] || "⚡" : "⚡";
+
+      let packname = defaultPack;
+      let author = defaultAuthor;
+
+      if (match[1] && match[1].trim() !== "") {
+        if (match[1].includes(";")) {
+          const parts = match[1].split(";");
+          packname = parts[0].trim();
+          author = parts[1].trim();
+        } else {
+          packname = match[1].trim();
+          author = "";
+        }
       }
+
+      var exif = {
+        author: author,
+        packname: packname,
+        categories: defaultCat,
+        android: "https://github.com/JITHUKNR/OGGY-MD/",
+        ios: "https://github.com/JITHUKNR/OGGY-MD/",
+      };
+
       return await m.client.sendMessage(
         m.jid,
         { sticker: fs.readFileSync(await addExif(q, exif)) },
         { quoted: m.quoted }
       );
     }
+
     if (!stickermsg && audiomsg) {
       let inf =
         match[1] !== ""
           ? match[1]
           : config.AUDIO_DATA === "default"
-          ? "Ryzn- Audio title here;Raganork - Artist;https://i.ibb.co/s98DyMMq/NL-1.png"
+          ? "OGGY-MD;ABHIIXZ;https://i.ibb.co/s98DyMMq/NL-1.png"
           : config.AUDIO_DATA;
+
       if (config.AUDIO_DATA == "default") {
         await m.sendReply(
           `_Using default audio metadata, use .setvar AUDIO_INFO=title;artist;imageurl to change_`
         );
       }
+
       let spl = inf.split(";"),
         image = spl[2]
           ? await getBuffer(spl[2])
           : await getBuffer(
-              config.BOT_INFO.split(";")?.[3] === "default"
+              config.BOT_INFO.split(";")?.[2] === "default" || !config.BOT_INFO.split(";")?.[2]
                 ? "https://i.ibb.co/s98DyMMq/NL-1.png"
-                : config.BOT_INFO.split(";")[3]
+                : config.BOT_INFO.split(";")[2]
             ),
         res = await addID3(
           q,
-          spl[0],
-          spl[1] ? spl[1] : config.AUDIO_DATA.split(";")[1],
-          "Raganork Engine",
+          spl[0] || "OGGY-MD",
+          spl[1] ? spl[1] : (config.AUDIO_DATA.split(";")[1] || "ABHIIXZ"),
+          "OGGY-MD Engine",
           image
         );
+
       await m.client.sendMessage(
         m.jid,
         {
@@ -84,6 +99,7 @@ Module(
         }
       );
     }
+
     if (!audiomsg && !stickermsg)
       return await m.client.sendMessage(
         m.jid,
@@ -96,6 +112,7 @@ Module(
       );
   }
 );
+
 Module(
   {
     pattern: "mp4 ?(.*)",
