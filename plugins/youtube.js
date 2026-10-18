@@ -144,13 +144,33 @@ function formatViews(views) {
   return views?.toString() || "N/A";
 }
 
-// INLINE CARD HELPER: SENDS INLINE PREVIEW (NO FULL-SCREEN ZOOM) + AUDIO
+// FETCHES & CONVERTS YOUTUBE THUMBNAIL TO SAFE COMPRESSED JPEG BUFFER
+async function getSafeJpegThumb(url) {
+  if (!url) return null;
+  try {
+    const res = await axios.get(url, { responseType: "arraybuffer", timeout: 8000 });
+    const tmpIn = path.join("/tmp", `thumb_in_${Date.now()}`);
+    const tmpOut = path.join("/tmp", `thumb_out_${Date.now()}.jpg`);
+    fs.writeFileSync(tmpIn, Buffer.from(res.data));
+    await runCmd(`ffmpeg -i "${tmpIn}" -vf "scale=400:400:force_original_aspect_ratio=increase,crop=400:400" -q:v 6 "${tmpOut}" -y`);
+    try { fs.unlinkSync(tmpIn); } catch (e) {}
+    if (fs.existsSync(tmpOut)) {
+      const buf = fs.readFileSync(tmpOut);
+      try { fs.unlinkSync(tmpOut); } catch (e) {}
+      return buf;
+    }
+  } catch (e) {
+    console.error("Thumbnail conversion error:", e);
+  }
+  return null;
+}
+
+// INLINE PREVIEW CARD HELPER (NO ZOOM + REAL METADATA + AUDIO)
 async function sendInlineSong(sock, jid, result, quotedData, customUrl = "") {
   const cleanTitle = (result.title || "YouTube Audio").replace(/[\\/:*?"<>|]/g, "").substring(0, 50).trim();
   const artist = result.uploader || result.channel?.name || "YouTube Artist";
   const songUrl = customUrl || result.url || "https://www.youtube.com";
 
-  // 1. INLINE PREVIEW CARD (ഫോട്ടോയിൽ തൊട്ടാൽ സൂം ചെയ്ത് വരില്ല)
   let caption = `╭━━━〔 🎵 *YOUTUBE MUSIC* 〕━━━╮\n`;
   caption += `┃ 🎶 *Title:* ${cleanTitle}\n`;
   caption += `┃ 👤 *Artist:* ${artist}\n`;
@@ -164,22 +184,28 @@ async function sendInlineSong(sock, jid, result, quotedData, customUrl = "") {
   };
 
   if (result.thumbnail) {
-    cardPayload.contextInfo = {
-      externalAdReply: {
-        title: cleanTitle,
-        body: artist,
-        mediaType: 1,
-        thumbnailUrl: result.thumbnail,
-        renderLargerThumbnail: true,
-        showAdAttribution: false,
-        sourceUrl: songUrl,
-      },
-    };
+    const thumbBuffer = await getSafeJpegThumb(result.thumbnail);
+    if (thumbBuffer) {
+      cardPayload.contextInfo = {
+        externalAdReply: {
+          title: cleanTitle,
+          body: artist,
+          mediaType: 1,
+          thumbnail: thumbBuffer,
+          renderLargerThumbnail: true,
+          showAdAttribution: false,
+          sourceUrl: songUrl,
+        },
+      };
+    }
   }
 
-  await sock.sendMessage(jid, cardPayload, { quoted: quotedData });
+  try {
+    await sock.sendMessage(jid, cardPayload, { quoted: quotedData });
+  } catch (err) {
+    await sock.sendMessage(jid, { text: caption }, { quoted: quotedData }).catch(() => {});
+  }
 
-  // 2. പ്ലേ ചെയ്യാവുന്ന ഒറിജിനൽ ഓഡിയോ
   await sock.sendMessage(
     jid,
     {
@@ -537,7 +563,7 @@ Module(
 
         try {
           const result = await downloadAudio(selectedVideo.url);
-          result.thumbnail = selectedVideo.thumbnail;
+          result.thumbnail = selectedVideo.thumbnail || result.thumbnail;
           result.uploader = selectedVideo.channel?.name || result.uploader;
           result.duration = selectedVideo.duration || result.duration;
 
