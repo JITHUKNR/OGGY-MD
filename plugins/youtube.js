@@ -15,7 +15,6 @@ const VIDEO_SIZE_LIMIT = 150 * 1024 * 1024;
 const COOKIE_PATH = "/root/RAGANORK-BOT/cookies.txt";
 const YT_FLAGS = `--cookies "${COOKIE_PATH}" --extractor-args "youtube:player_client=mweb,web"`;
 const LOCAL_COVER_PATH = "/root/RAGANORK-BOT/audio_cover.jpg";
-const LOCAL_THUMB_PATH = "/root/RAGANORK-BOT/audio_thumb.jpg";
 
 function runCmd(cmd) {
   return new Promise((resolve, reject) => {
@@ -31,7 +30,7 @@ function cleanYtUrl(url) {
   return match && match[1] ? `https://www.youtube.com/watch?v=${match[1]}` : url;
 }
 
-// 1. BULLETPROOF YT-DLP AUDIO DOWNLOADER (ORIGINAL FAST WORKING ENGINE)
+// 1. BULLETPROOF FAST YT-DLP AUDIO DOWNLOADER
 async function downloadAudio(url) {
   const timestamp = Date.now();
   const cleaned = cleanYtUrl(url);
@@ -56,30 +55,6 @@ async function downloadAudio(url) {
     title: title,
     info: { channel: { name: "YouTube" }, thumbnail: "" },
   };
-}
-
-// OGGY-MD SAFE THUMBNAIL COMPRESSOR (< 25KB GUARANTEED SO WHATSAPP NEVER DROPS)
-async function getCompressedThumb() {
-  try {
-    if (fs.existsSync(LOCAL_THUMB_PATH)) {
-      const stats = fs.statSync(LOCAL_THUMB_PATH);
-      if (stats.size > 0 && stats.size < 40000) {
-        return fs.readFileSync(LOCAL_THUMB_PATH);
-      }
-    }
-
-    if (fs.existsSync(LOCAL_COVER_PATH)) {
-      await runCmd(
-        `ffmpeg -i "${LOCAL_COVER_PATH}" -vf "scale=300:300:force_original_aspect_ratio=increase,crop=300:300" -q:v 7 "${LOCAL_THUMB_PATH}" -y`
-      );
-      if (fs.existsSync(LOCAL_THUMB_PATH)) {
-        return fs.readFileSync(LOCAL_THUMB_PATH);
-      }
-    }
-  } catch (e) {
-    console.error("Thumbnail generation error:", e);
-  }
-  return null;
 }
 
 // 2. BULLETPROOF YT-DLP VIDEO DOWNLOADER
@@ -159,6 +134,46 @@ function formatViews(views) {
   return views?.toString() || "N/A";
 }
 
+// HELPER: SENDS BRANDED COVER CARD + AUDIO (100% RELIABLE)
+async function sendBrandedAudio(sock, jid, audioPath, title, quotedData) {
+  const cleanTitle = (title || "YouTube Audio").replace(/[\\/:*?"<>|]/g, "").substring(0, 45).trim();
+  const artist = config.AUDIO_DATA?.split(";")[1] || "ABHIIXZ";
+
+  // 1. Send Cover Art Image Card with Details
+  if (fs.existsSync(LOCAL_COVER_PATH)) {
+    try {
+      const coverBuffer = fs.readFileSync(LOCAL_COVER_PATH);
+      await sock.sendMessage(
+        jid,
+        {
+          image: coverBuffer,
+          caption:
+            `╭───〔 ⚡ *OGGY-MD MUSIC* ⚡ 〕───\n` +
+            `│ 🎵 *Title:* ${cleanTitle}\n` +
+            `│ 👤 *Artist:* ${artist}\n` +
+            `│ 💿 *Album:* OGGY-MD\n` +
+            `╰────────────────────────`,
+        },
+        { quoted: quotedData }
+      );
+    } catch (e) {
+      console.error("Cover send error:", e);
+    }
+  }
+
+  // 2. Send Clean Playable Audio (WhatsApp will never drop this)
+  await sock.sendMessage(
+    jid,
+    {
+      audio: fs.readFileSync(audioPath),
+      mimetype: "audio/mp4",
+      ptt: false,
+      fileName: `${cleanTitle} - OGGY MD.mp3`,
+    },
+    { quoted: quotedData }
+  );
+}
+
 // ==========================================
 // 1. SONG COMMAND
 // ==========================================
@@ -192,31 +207,7 @@ Module(
         const result = await downloadAudio(url);
         audioPath = result.path;
 
-        const cleanTitle = (result.title || "YouTube Audio").replace(/[\\/:*?"<>|]/g, "").substring(0, 45).trim();
-        const thumbBuffer = await getCompressedThumb();
-
-        const msgPayload = {
-          audio: fs.readFileSync(audioPath),
-          mimetype: "audio/mp4",
-          ptt: false,
-          fileName: `${cleanTitle} - OGGY MD.mp3`,
-        };
-
-        if (thumbBuffer) {
-          msgPayload.contextInfo = {
-            externalAdReply: {
-              title: cleanTitle,
-              body: "OGGY-MD • ABHIIXZ",
-              mediaType: 1,
-              thumbnail: thumbBuffer,
-              renderLargerThumbnail: true,
-              showAdAttribution: false,
-              sourceUrl: "https://www.youtube.com",
-            },
-          };
-        }
-
-        await sock.sendMessage(message.jid, msgPayload, { quoted: message.data });
+        await sendBrandedAudio(sock, message.jid, audioPath, result.title, message.data);
 
         if (downloadMsg && downloadMsg.key) {
           await sock.sendMessage(message.jid, { delete: downloadMsg.key }).catch(() => {});
@@ -389,13 +380,13 @@ Module(
 );
 
 // ==========================================
-// 5. YTA COMMAND
+// 5. YTA COMMAND (DOCUMENT FORMAT WITH EXACT NAME)
 // ==========================================
 Module(
   {
     pattern: "yta ?(.*)",
     fromMe: fromMe,
-    desc: "Download YouTube audio as document",
+    desc: "Download YouTube audio as document with full title",
     usage: ".yta <link>",
     use: "download",
   },
@@ -412,7 +403,7 @@ Module(
     let audioPath;
 
     try {
-      downloadMsg = await message.sendReply("_Downloading audio..._");
+      downloadMsg = await message.sendReply("_Downloading audio as document..._");
       const result = await downloadAudio(url);
       audioPath = result.path;
 
@@ -479,31 +470,7 @@ Module(
       const result = await downloadAudio(targetUrl);
       audioPath = result.path;
 
-      const cleanTitle = (result.title || "YouTube Audio").replace(/[\\/:*?"<>|]/g, "").substring(0, 45).trim();
-      const thumbBuffer = await getCompressedThumb();
-
-      const msgPayload = {
-        audio: fs.readFileSync(audioPath),
-        mimetype: "audio/mp4",
-        ptt: false,
-        fileName: `${cleanTitle} - OGGY MD.mp3`,
-      };
-
-      if (thumbBuffer) {
-        msgPayload.contextInfo = {
-          externalAdReply: {
-            title: cleanTitle,
-            body: "OGGY-MD • ABHIIXZ",
-            mediaType: 1,
-            thumbnail: thumbBuffer,
-            renderLargerThumbnail: true,
-            showAdAttribution: false,
-            sourceUrl: "https://www.youtube.com",
-          },
-        };
-      }
-
-      await sock.sendMessage(message.jid, msgPayload, { quoted: message.data });
+      await sendBrandedAudio(sock, message.jid, audioPath, result.title, message.data);
 
       if (downloadMsg && downloadMsg.key) {
         await sock.sendMessage(message.jid, { delete: downloadMsg.key }).catch(() => {});
@@ -554,31 +521,7 @@ Module(
           const result = await downloadAudio(selectedVideo.url);
           const audioPath = result.path;
 
-          const cleanTitle = (selectedVideo.title || "YouTube Audio").replace(/[\\/:*?"<>|]/g, "").substring(0, 45).trim();
-          const thumbBuffer = await getCompressedThumb();
-
-          const msgPayload = {
-            audio: fs.readFileSync(audioPath),
-            mimetype: "audio/mp4",
-            ptt: false,
-            fileName: `${cleanTitle} - OGGY MD.mp3`,
-          };
-
-          if (thumbBuffer) {
-            msgPayload.contextInfo = {
-              externalAdReply: {
-                title: cleanTitle,
-                body: "OGGY-MD • ABHIIXZ",
-                mediaType: 1,
-                thumbnail: thumbBuffer,
-                renderLargerThumbnail: true,
-                showAdAttribution: false,
-                sourceUrl: "https://www.youtube.com",
-              },
-            };
-          }
-
-          await sock.sendMessage(message.jid, msgPayload, { quoted: message.data });
+          await sendBrandedAudio(sock, message.jid, audioPath, selectedVideo.title, message.data);
 
           if (downloadMsg && downloadMsg.key) {
             await sock.sendMessage(message.jid, { delete: downloadMsg.key }).catch(() => {});
@@ -638,31 +581,7 @@ Module(
           let downloadMsg = await message.sendReply(`_Downloading audio..._`);
           try {
             const result = await downloadAudio(url);
-            const cleanTitle = (result.title || "YouTube Audio").replace(/[\\/:*?"<>|]/g, "").substring(0, 45).trim();
-            const thumbBuffer = await getCompressedThumb();
-
-            const msgPayload = {
-              audio: fs.readFileSync(result.path),
-              mimetype: "audio/mp4",
-              ptt: false,
-              fileName: `${cleanTitle} - OGGY MD.mp3`,
-            };
-
-            if (thumbBuffer) {
-              msgPayload.contextInfo = {
-                externalAdReply: {
-                  title: cleanTitle,
-                  body: "OGGY-MD • ABHIIXZ",
-                  mediaType: 1,
-                  thumbnail: thumbBuffer,
-                  renderLargerThumbnail: true,
-                  showAdAttribution: false,
-                  sourceUrl: "https://www.youtube.com",
-                },
-              };
-            }
-
-            await sock.sendMessage(message.jid, msgPayload, { quoted: message.data });
+            await sendBrandedAudio(sock, message.jid, result.path, result.title, message.data);
 
             if (downloadMsg && downloadMsg.key) {
               await sock.sendMessage(message.jid, { delete: downloadMsg.key }).catch(() => {});
@@ -788,31 +707,7 @@ Module(
       }
 
       const result = await downloadAudio(results[0].url);
-      const cleanTitle = (title || "Spotify Music").replace(/[\\/:*?"<>|]/g, "").substring(0, 45).trim();
-      const thumbBuffer = await getCompressedThumb();
-
-      const msgPayload = {
-        audio: fs.readFileSync(result.path),
-        mimetype: "audio/mp4",
-        ptt: false,
-        fileName: `${cleanTitle} - OGGY MD.mp3`,
-      };
-
-      if (thumbBuffer) {
-        msgPayload.contextInfo = {
-          externalAdReply: {
-            title: cleanTitle,
-            body: "OGGY-MD • ABHIIXZ",
-            mediaType: 1,
-            thumbnail: thumbBuffer,
-            renderLargerThumbnail: true,
-            showAdAttribution: false,
-            sourceUrl: "https://www.youtube.com",
-          },
-        };
-      }
-
-      await sock.sendMessage(message.jid, msgPayload, { quoted: message.data });
+      await sendBrandedAudio(sock, message.jid, result.path, title, message.data);
 
       if (downloadMsg && downloadMsg.key) {
         await sock.sendMessage(message.jid, { delete: downloadMsg.key }).catch(() => {});
@@ -847,7 +742,7 @@ Module(
     }
 
     try {
-      const waitMsg = await message.sendReply("_⚡ പ്രോസസ്സ് ചെയ്യുന്നു, ദയവായി കാത്തിരിക്കൂ..._");
+      const waitMsg = await message.sendReply("_⚡ സേവ് ചെയ്യുന്നു, ദയവായി കാത്തിരിക്കൂ..._");
 
       let dl;
       if (isImageReply) {
@@ -866,11 +761,6 @@ Module(
 
       if (imgBuffer && Buffer.isBuffer(imgBuffer)) {
         fs.writeFileSync(LOCAL_COVER_PATH, imgBuffer);
-        // Generate small 300x300 compressed thumbnail immediately (< 20KB)
-        await runCmd(
-          `ffmpeg -i "${LOCAL_COVER_PATH}" -vf "scale=300:300:force_original_aspect_ratio=increase,crop=300:300" -q:v 7 "${LOCAL_THUMB_PATH}" -y`
-        );
-
         return await message.edit(
           "╭───〔 ⚡ *OGGY-MD COVER SET* 〕───\n│ ✅ *നിങ്ങളുടെ ABHIIXZ ലോഗോ വിജയകരമായി സേവ് ചെയ്തു!*\n│ 🎵 ഇനി ഡൗൺലോഡ് ചെയ്യുന്ന പാട്ടുകൾക്ക് ഈ ലോഗോയും\n│ *OGGY-MD • ABHIIXZ* കാർഡും തെളിയും!\n╰────────────────────────",
           message.jid,
