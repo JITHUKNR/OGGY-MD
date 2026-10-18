@@ -29,41 +29,7 @@ function cleanYtUrl(url) {
   return match && match[1] ? `https://www.youtube.com/watch?v=${match[1]}` : url;
 }
 
-// OGGY-MD AUDIO METADATA & COVER HELPER
-async function prepareOggyAudio(audioPath, title, customThumbnail = "") {
-  let audioBuffer = fs.readFileSync(audioPath);
-  let cleanTitle = (title || "YouTube Audio").replace(/[\\/:*?"<>|]/g, "").substring(0, 40).trim();
-  let artist = config.AUDIO_DATA?.split(";")[1] || "ABHIIXZ";
-  let album = "OGGY-MD";
-  let coverUrl = config.AUDIO_COVER || customThumbnail || "https://i.ibb.co/s98DyMMq/NL-1.png";
-
-  let imgBuffer = null;
-  try {
-    if (coverUrl) {
-      imgBuffer = await getBuffer(coverUrl);
-    }
-  } catch (e) {
-    imgBuffer = null;
-  }
-
-  try {
-    if (addID3 && imgBuffer) {
-      audioBuffer = await addID3(audioBuffer, cleanTitle, artist, album, imgBuffer);
-    }
-  } catch (e) {
-    console.error("ID3 Tagging failed, using raw buffer:", e);
-  }
-
-  return {
-    buffer: audioBuffer,
-    fileName: `${cleanTitle} - OGGY MD.mp3`,
-    title: cleanTitle,
-    artist: artist,
-    coverUrl: coverUrl,
-  };
-}
-
-// 1. BULLETPROOF YT-DLP AUDIO DOWNLOADER (DENO + COOKIES)
+// 1. BULLETPROOF YT-DLP AUDIO DOWNLOADER WITH MP3 CONVERSION
 async function downloadAudio(url) {
   const timestamp = Date.now();
   const cleaned = cleanYtUrl(url);
@@ -81,16 +47,66 @@ async function downloadAudio(url) {
 
   const files = fs.readdirSync("/tmp").filter((f) => f.startsWith(`yt_aud_${timestamp}`));
   if (files.length === 0) throw new Error("Audio download failed");
-  const finalPath = path.join("/tmp", files[0]);
+  const rawPath = path.join("/tmp", files[0]);
+
+  // Convert to clean MP3 so ID3 tags and WhatsApp playback work 100%
+  const mp3Path = path.join("/tmp", `yt_aud_${timestamp}_clean.mp3`);
+  try {
+    await runCmd(`ffmpeg -i "${rawPath}" -vn -ar 44100 -ac 2 -b:a 192k "${mp3Path}" -y`);
+    if (fs.existsSync(mp3Path)) {
+      try { fs.unlinkSync(rawPath); } catch (e) {}
+      return {
+        path: mp3Path,
+        title: title,
+        info: { channel: { name: "YouTube" }, thumbnail: "" },
+      };
+    }
+  } catch (e) {
+    console.error("FFmpeg conversion error:", e);
+  }
 
   return {
-    path: finalPath,
+    path: rawPath,
     title: title,
     info: { channel: { name: "YouTube" }, thumbnail: "" },
   };
 }
 
-// 2. BULLETPROOF YT-DLP VIDEO DOWNLOADER (DENO + COOKIES)
+// OGGY-MD AUDIO METADATA & COVER HELPER (EMBEDS ALBUM ART INTO MP3)
+async function prepareOggyAudio(audioPath, title, customThumbnail = "") {
+  let audioBuffer = fs.readFileSync(audioPath);
+  let cleanTitle = (title || "YouTube Audio").replace(/[\\/:*?"<>|]/g, "").substring(0, 40).trim();
+  let artist = config.AUDIO_DATA?.split(";")[1] || "ABHIIXZ";
+  let album = "OGGY-MD";
+  let coverUrl = config.AUDIO_COVER || customThumbnail || config.BOT_INFO?.split(";")?.[2] || "https://i.ibb.co/s98DyMMq/NL-1.png";
+
+  try {
+    let imgBuffer = null;
+    if (coverUrl) {
+      try {
+        imgBuffer = await getBuffer(coverUrl);
+      } catch (e) {}
+    }
+
+    if (imgBuffer && addID3) {
+      const tagged = await addID3(audioBuffer, cleanTitle, artist, album, imgBuffer);
+      if (tagged && Buffer.isBuffer(tagged)) {
+        audioBuffer = tagged;
+      }
+    }
+  } catch (e) {
+    console.error("ID3 Tagging failed, using raw buffer:", e);
+  }
+
+  return {
+    buffer: audioBuffer,
+    fileName: `${cleanTitle} - OGGY MD.mp3`,
+    title: cleanTitle,
+    artist: artist,
+  };
+}
+
+// 2. BULLETPROOF YT-DLP VIDEO DOWNLOADER
 async function downloadVideo(url, quality = "360p") {
   const timestamp = Date.now();
   const cleaned = cleanYtUrl(url);
@@ -122,10 +138,6 @@ async function downloadVideo(url, quality = "360p") {
     path: finalPath,
     title: title,
   };
-}
-
-async function convertM4aToMp3(filePath) {
-  return filePath;
 }
 
 async function getVideoInfo(url) {
@@ -165,14 +177,6 @@ async function searchYoutube(query, limit = 10) {
   }
 }
 
-function formatBytes(bytes) {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
-}
-
 function formatViews(views) {
   if (views >= 1000000) return (views / 1000000).toFixed(1) + "M";
   if (views >= 1000) return (views / 1000).toFixed(1) + "K";
@@ -180,7 +184,7 @@ function formatViews(views) {
 }
 
 // ==========================================
-// 1. SONG COMMAND (SUPPORTS BOTH LINK & NAME)
+// 1. SONG COMMAND
 // ==========================================
 Module(
   {
@@ -218,19 +222,9 @@ Module(
           message.jid,
           {
             audio: oggyAudio.buffer,
-            mimetype: "audio/mp4",
+            mimetype: "audio/mpeg",
             ptt: false,
             fileName: oggyAudio.fileName,
-            contextInfo: {
-              externalAdReply: {
-                title: oggyAudio.title,
-                body: "OGGY-MD • ABHIIXZ",
-                mediaType: 2,
-                thumbnailUrl: oggyAudio.coverUrl,
-                renderLargerThumbnail: true,
-                showAdAttribution: false,
-              },
-            },
           },
           { quoted: message.data }
         );
@@ -440,7 +434,7 @@ Module(
         {
           document: oggyAudio.buffer,
           fileName: oggyAudio.fileName,
-          mimetype: "audio/mp4",
+          mimetype: "audio/mpeg",
           caption: `_*${result.title}*_\n_By: OGGY-MD • ABHIIXZ_`,
         },
         { quoted: message.data }
@@ -504,19 +498,9 @@ Module(
         message.jid,
         {
           audio: oggyAudio.buffer,
-          mimetype: "audio/mp4",
+          mimetype: "audio/mpeg",
           ptt: false,
           fileName: oggyAudio.fileName,
-          contextInfo: {
-            externalAdReply: {
-              title: oggyAudio.title,
-              body: "OGGY-MD • ABHIIXZ",
-              mediaType: 2,
-              thumbnailUrl: oggyAudio.coverUrl,
-              renderLargerThumbnail: true,
-              showAdAttribution: false,
-            },
-          },
         },
         { quoted: message.data }
       );
@@ -576,19 +560,9 @@ Module(
             message.jid,
             {
               audio: oggyAudio.buffer,
-              mimetype: "audio/mp4",
+              mimetype: "audio/mpeg",
               ptt: false,
               fileName: oggyAudio.fileName,
-              contextInfo: {
-                externalAdReply: {
-                  title: oggyAudio.title,
-                  body: "OGGY-MD • ABHIIXZ",
-                  mediaType: 2,
-                  thumbnailUrl: oggyAudio.coverUrl,
-                  renderLargerThumbnail: true,
-                  showAdAttribution: false,
-                },
-              },
             },
             { quoted: message.data }
           );
@@ -657,19 +631,9 @@ Module(
               message.jid,
               {
                 audio: oggyAudio.buffer,
-                mimetype: "audio/mp4",
+                mimetype: "audio/mpeg",
                 ptt: false,
                 fileName: oggyAudio.fileName,
-                contextInfo: {
-                  externalAdReply: {
-                    title: oggyAudio.title,
-                    body: "OGGY-MD • ABHIIXZ",
-                    mediaType: 2,
-                    thumbnailUrl: oggyAudio.coverUrl,
-                    renderLargerThumbnail: true,
-                    showAdAttribution: false,
-                  },
-                },
               },
               { quoted: message.data }
             );
@@ -722,7 +686,7 @@ Module(
               {
                 document: oggyAudio.buffer,
                 fileName: oggyAudio.fileName,
-                mimetype: "audio/mp4",
+                mimetype: "audio/mpeg",
                 caption: `_*${result.title}*_\n_By: OGGY-MD • ABHIIXZ_`,
               },
               { quoted: message.data }
@@ -803,19 +767,9 @@ Module(
         message.jid,
         {
           audio: oggyAudio.buffer,
-          mimetype: "audio/mp4",
+          mimetype: "audio/mpeg",
           ptt: false,
           fileName: oggyAudio.fileName,
-          contextInfo: {
-            externalAdReply: {
-              title: oggyAudio.title,
-              body: "OGGY-MD • ABHIIXZ",
-              mediaType: 2,
-              thumbnailUrl: oggyAudio.coverUrl,
-              renderLargerThumbnail: true,
-              showAdAttribution: false,
-            },
-          },
         },
         { quoted: message.data }
       );
@@ -873,7 +827,7 @@ Module(
 
 // ============================================================
 // 10. ഓഡിയോ വിവരങ്ങൾ മാറ്റാനുള്ള കമാൻഡ് (.setaudiodata)
-// ============================================================
+// ==========================================
 Module(
   {
     pattern: "setaudiodata ?(.*)",
