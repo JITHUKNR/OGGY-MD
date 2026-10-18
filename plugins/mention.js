@@ -6,7 +6,7 @@ const { uploadToCatbox } = require("./utils/upload");
 const fs = require("fs");
 const path = require("path");
 
-var handler = HANDLERS !== "false" ? HANDLERS.split("")[0] : "";
+var handler = HANDLERS !== "false" ? HANDLERS.split("")[0] : ".";
 
 const { setVar, delVar } = require("./manage");
 
@@ -50,6 +50,11 @@ function isSudoUser(jid) {
     }
   }
 
+  // Check SUDO string as well
+  if (config.SUDO && config.SUDO.includes(jid.split("@")[0])) {
+    return true;
+  }
+
   return sudoMap.includes(jid);
 }
 
@@ -57,9 +62,9 @@ Module(
   {
     pattern: "mention ?(.*)",
     fromMe: true,
-    desc: "Auto mention reply management",
+    desc: "Auto mention reply management for OGGY-MD",
     usage:
-      ".mention set (reply to message) | .mention set <text> | .mention get | .mention del | .mention help",
+      ".mention set (reply to msg) | .mention set <text> | .mention get | .mention del | .mention help",
   },
   async (message, match) => {
     const args = match[1]?.trim().split(" ");
@@ -68,7 +73,13 @@ Module(
 
     if (!subcommand) {
       return await message.sendReply(
-        `Please specify a subcommand!\n\n*Available commands:*\n• \`${handler}mention set\` - Set mention reply (reply to message or add text)\n• \`${handler}mention get\` - View current mention reply\n• \`${handler}mention del\` - Delete mention reply\n• \`${handler}mention help\` - Show detailed help`
+        `╭━━━〔 ⚡ *OGGY-MD MENTION* ⚡ 〕━━━╮\n` +
+        `┃ ⚙️ *Available Commands:*\n` +
+        `┃ ◦ \`${handler}mention set\` - Set reply (text/media)\n` +
+        `┃ ◦ \`${handler}mention get\` - View current reply\n` +
+        `┃ ◦ \`${handler}mention del\` - Delete reply\n` +
+        `┃ ◦ \`${handler}mention help\` - Detailed setup guide\n` +
+        `╰━━━━━━━━━━━━━━━━━━━━╯`
       );
     }
 
@@ -77,9 +88,13 @@ Module(
       case "delete":
         const success = await deleteMentionReply();
         if (success) {
-          return await message.sendReply("Mention reply deleted successfully!");
+          return await message.sendReply(
+            "╭───〔 ⚡ *OGGY-MD SYSTEM* 〕───\n│ ✅ *Mention reply deleted successfully!*\n╰────────────────────────"
+          );
         } else {
-          return await message.sendReply("Failed to delete mention reply!");
+          return await message.sendReply(
+            "╭───〔 ⚡ *OGGY-MD SYSTEM* 〕───\n│ ❌ *Failed to delete mention reply!*\n╰────────────────────────"
+          );
         }
 
       case "get":
@@ -87,21 +102,23 @@ Module(
         const mentionData = getMentionReply();
         if (!mentionData) {
           return await message.sendReply(
-            "No mention reply set!\n\n*Usage:*\n• Reply to any message and type `.mention set`\n• Or use `.mention set <text>` for text message"
+            "╭───〔 ⚡ *OGGY-MD MENTION* 〕───\n│ ⚠️ *No mention reply configured yet!*\n│\n│ 💡 *How to set:*\n│ • Reply to any audio/image with \`${handler}mention set\`\n│ • Or type \`${handler}mention set <text>\`\n╰────────────────────────"
           );
         }
 
-        let responseText = "*Current Mention Reply:*\n\n";
-        responseText += `*Type:* \`${mentionData.type.toUpperCase()}\`\n`;
+        let responseText = `╭━━━〔 ⚡ *CURRENT MENTION REPLY* 〕━━━╮\n`;
+        responseText += `┃ 📁 *Type:* \`${mentionData.type.toUpperCase()}\`\n`;
         if (mentionData.caption) {
-          responseText += `*Caption:* _${mentionData.caption}_\n`;
+          responseText += `┃ 📝 *Caption:* _${mentionData.caption}_\n`;
+        }
+        if (mentionData.content) {
+          responseText += `┃ 💬 *Text:* _${mentionData.content}_\n`;
         }
         if (mentionData.url) {
-          responseText += `*Media URL:* \`${mentionData.url}\`\n`;
+          responseText += `┃ 🔗 *Media URL:* \`${mentionData.url}\`\n`;
         }
-        responseText += `*Set on:* _${new Date(
-          mentionData.timestamp
-        ).toLocaleString()}_`;
+        responseText += `┃ ⏱️ *Updated:* _${new Date(mentionData.timestamp).toLocaleString()}_\n`;
+        responseText += `╰━━━━━━━━━━━━━━━━━━━━╯`;
 
         return await message.sendReply(responseText);
 
@@ -131,10 +148,11 @@ Module(
               else if (replyMsg.sticker) mediaType = "sticker";
 
               const downloadedFilePath = await replyMsg.download();
-
               const uploadResult = await uploadToCatbox(downloadedFilePath);
 
-              fs.unlinkSync(downloadedFilePath);
+              try {
+                fs.unlinkSync(downloadedFilePath);
+              } catch (e) {}
 
               if (uploadResult && uploadResult.url) {
                 mentionData.type = mediaType;
@@ -142,7 +160,7 @@ Module(
                 mentionData.caption = replyMsg.text || "";
               } else {
                 return await message.sendReply(
-                  "Failed to upload media! Please try again."
+                  "╭───〔 ⚡ *OGGY-MD SYSTEM* 〕───\n│ ❌ *Failed to upload media! Try again.*\n╰────────────────────────"
                 );
               }
             } else if (replyMsg.text) {
@@ -150,24 +168,26 @@ Module(
               mentionData.content = replyMsg.text;
             } else {
               return await message.sendReply(
-                "Unsupported message type for mention reply!"
+                "╭───〔 ⚡ *OGGY-MD SYSTEM* 〕───\n│ ⚠️ *Unsupported message format!*\n╰────────────────────────"
               );
             }
 
-            const success = await setMentionReply(mentionData);
-            if (success) {
+            const isSaved = await setMentionReply(mentionData);
+            if (isSaved) {
               return await message.sendReply(
-                `Mention reply set successfully!\n\n*Type:* \`${mentionData.type.toUpperCase()}\`\n*Content:* _${
-                  mentionData.content || mentionData.caption || "Media file"
-                }_`
+                `╭───〔 ⚡ *OGGY-MD MENTION SET* 〕───\n` +
+                `│ ✅ *Mention reply configured successfully!*\n` +
+                `│ 📁 *Type:* \`${mentionData.type.toUpperCase()}\`\n` +
+                `│ 💬 *Preview:* _${mentionData.content || mentionData.caption || "Media response"}_\n` +
+                `╰────────────────────────`
               );
             } else {
-              return await message.sendReply("Failed to set mention reply!");
+              return await message.sendReply("╭───〔 ⚡ *OGGY-MD* 〕───\n│ ❌ *Failed to save mention reply!*\n╰────────────────────────");
             }
           } catch (error) {
             console.error("Error setting mention reply:", error);
             return await message.sendReply(
-              "Error setting mention reply! Please try again."
+              "╭───〔 ⚡ *OGGY-MD* 〕───\n│ ❌ *Error processing media reply!*\n╰────────────────────────"
             );
           }
         }
@@ -181,58 +201,45 @@ Module(
             timestamp: new Date().toISOString(),
           };
 
-          const success = await setMentionReply(mentionData);
-          if (success) {
+          const isSaved = await setMentionReply(mentionData);
+          if (isSaved) {
             return await message.sendReply(
-              `Mention reply set successfully!\n\n*Content:* _${mentionData.content}_`
+              `╭───〔 ⚡ *OGGY-MD MENTION SET* 〕───\n` +
+              `│ ✅ *Text reply saved successfully!*\n` +
+              `│ 💬 *Text:* _${mentionData.content}_\n` +
+              `╰────────────────────────`
             );
           } else {
-            return await message.sendReply("Failed to set mention reply!");
+            return await message.sendReply("╭───〔 ⚡ *OGGY-MD* 〕───\n│ ❌ *Failed to save mention reply!*\n╰────────────────────────");
           }
         }
 
         return await message.sendReply(
-          `Please provide input for set command!\n\n*Usage:*\n• Reply to any message and type \`${handler}mention set\`\n• Or use \`${handler}mention set <text>\` for text message`
+          `╭───〔 ⚡ *OGGY-MD SYSTEM* 〕───\n│ ⚠️ *Please provide text or reply to a media file!*\n│ 💡 *Example:* \`${handler}mention set Hello! ABHIIXZ is currently away.\`\n╰────────────────────────`
         );
 
       case "help":
-        const helpText = `*Auto Mention Reply Help*
-
-*What is it?*
-When someone mentions the bot or sudo users, the bot automatically sends a saved reply message.
-
-*Commands:* _(Owner only)_
-• \`${handler}mention set\` - Reply to any message to set it as mention reply
-• \`${handler}mention set <text>\` - Set text as mention reply
-• \`${handler}mention get\` - View current mention reply
-• \`${handler}mention del\` - Delete mention reply
-
-*Supported Types:*
-• Text messages
-• Images _(with captions)_
-• Videos _(with captions)_
-• Audio files
-• Stickers
-• Documents
-
-*How it works:*
-1. Set a mention reply using the commands above
-2. When someone mentions @bot or @sudo in a message
-3. Bot automatically sends the saved reply
-
-*Examples:*
-• Reply to an image and type \`${handler}mention set\`
-• \`${handler}mention set Hello! I'm a bot\`
-• \`${handler}mention get\` - to see current reply
-• \`${handler}mention del\` - to remove reply
-
-_Note: Media files are uploaded to cloud storage for reliability._`;
+        const helpText = `╭━━━〔 ⚡ *OGGY-MD AUTO MENTION* ⚡ 〕━━━╮\n` +
+          `┃ ℹ️ *What is Auto Mention?*\n` +
+          `┃ ഗ്രൂപ്പുകളിലോ ചാറ്റുകളിലോ ആരെങ്കിലും നിങ്ങളെ\n` +
+          `┃ (@ABHIIXZ) അല്ലെങ്കിൽ ബോട്ടിനെ ടാഗ് ചെയ്യുമ്പോൾ\n` +
+          `┃ ഓട്ടോമാറ്റിക്കായി റിപ്ലൈ നൽകുന്ന സിസ്റ്റമാണിത്.\n` +
+          `┃\n` +
+          `┃ 🛠️ *Commands:*\n` +
+          `┃ ◦ \`${handler}mention set <text>\` - സെറ്റ് ചെയ്യുക\n` +
+          `┃ ◦ \`${handler}mention set\` - ഓഡിയോ/ഇമേജിന് റിപ്ലൈ അടിക്കുക\n` +
+          `┃ ◦ \`${handler}mention get\` - നിലവിലുള്ളത് കാണുക\n` +
+          `┃ ◦ \`${handler}mention del\` - ഒഴിവാക്കുക\n` +
+          `┃\n` +
+          `┃ 💡 *ഉദാഹരണം:*\n` +
+          `┃ \`${handler}mention set Hey! ABHIIXZ is busy now. Contact later!\`\n` +
+          `╰━━━━━━━━━━━━━━━━━━━━╯`;
 
         return await message.sendReply(helpText);
 
       default:
         return await message.sendReply(
-          `Unknown subcommand: \`${subcommand}\`\n\n*Available commands:*\n• \`${handler}mention set\` - Set mention reply\n• \`${handler}mention get\` - View current mention reply\n• \`${handler}mention del\` - Delete mention reply\n• \`${handler}mention help\` - Show help`
+          `╭───〔 ⚡ *OGGY-MD* 〕───\n│ ⚠️ *Unknown subcommand:* \`${subcommand}\`\n│ 💡 Type \`${handler}mention help\` for commands.\n╰────────────────────────`
         );
     }
   }
