@@ -1,13 +1,12 @@
 const simpleGit = require("simple-git");
 const git = simpleGit();
 const { Module } = require("../main");
-// const { update } = require('./misc/koyeb');
 const renderDeploy = require("./utils/render-api");
 const config = require("../config");
 const fs = require("fs").promises;
 const axios = require("axios");
 
-const handler = config.HANDLERS !== "false" ? config.HANDLERS.split("")[0] : "";
+const handler = config.HANDLERS !== "false" ? config.HANDLERS.split("")[0] : ".";
 const localPackageJson = require("../package.json");
 
 async function isGitRepo() {
@@ -21,7 +20,8 @@ async function isGitRepo() {
 
 async function getRemoteVersion() {
   try {
-    const remotePackageJsonUrl = `https://raw.githubusercontent.com/souravkl11/raganork-md/main/package.json`;
+    // Points directly to your own GitHub repository
+    const remotePackageJsonUrl = `https://raw.githubusercontent.com/JITHUKNR/OGGY-MD/main/package.json`;
     const response = await axios.get(remotePackageJsonUrl);
     return response.data.version;
   } catch (error) {
@@ -33,23 +33,22 @@ Module(
   {
     pattern: "update ?(.*)",
     fromMe: true,
-    desc: "Checks for and applies bot updates.",
+    desc: "Checks for and applies OGGY-MD bot updates.",
     use: "owner",
   },
   async (message, match) => {
     if (!(await isGitRepo())) {
       return await message.sendReply(
-        "_This bot isn't running from a Git repository. Automatic updates aren't available._"
+        "_⚠️ This bot isn't running from a Git repository. Automatic updates aren't available._"
       );
     }
 
     const command = match[1] ? match[1].toLowerCase() : "";
-    const processingMsg = await message.sendReply("_Checking for updates..._");
+    const processingMsg = await message.sendReply("_⚡ Checking for OGGY-MD updates..._");
 
     try {
-      // fetch remote version & commits
       await git.fetch();
-      const commits = await git.log(["main" + "..origin/" + "main"]);
+      const commits = await git.log(["main..origin/main"]);
       const localVersion = localPackageJson.version;
       let remoteVersion;
 
@@ -57,7 +56,7 @@ Module(
         remoteVersion = await getRemoteVersion();
       } catch (error) {
         return await message.edit(
-          "_Failed to check remote version. Please try again later._",
+          "_❌ Failed to fetch remote version. Please check your GitHub repository._",
           message.jid,
           processingMsg.key
         );
@@ -68,7 +67,7 @@ Module(
 
       if (!hasCommits && !versionChanged) {
         return await message.edit(
-          "_Bot is up to date!_",
+          "╭───〔 ⚡ *OGGY-MD SYSTEM* 〕───\n│ ✅ *OGGY-MD is already up to date!*\n│ 📦 *Current Version:* v" + localVersion + "\n╰────────────────────────",
           message.jid,
           processingMsg.key
         );
@@ -81,23 +80,25 @@ Module(
         let updateInfo = "";
 
         if (isStableUpdate) {
-          updateInfo = `*_UPDATE AVAILABLE_*\n\n`;
-          updateInfo += `📦 Current version: *${localVersion}*\n`;
-          updateInfo += `📦 New version: *${remoteVersion}*\n\n`;
-          updateInfo += `*_CHANGELOG:_*\n\n`;
+          updateInfo = `╭━━━〔 ⚡ *OGGY-MD UPDATE* ⚡ 〕━━━╮\n`;
+          updateInfo += `┃ 📦 *Current:* v${localVersion}\n`;
+          updateInfo += `┃ 🚀 *Latest:* v${remoteVersion}\n`;
+          updateInfo += `╰━━━━━━━━━━━━━━━━━━━━╯\n\n`;
+          updateInfo += `*📝 CHANGELOG:*\n`;
           for (let i in commits.all) {
-            updateInfo += `${parseInt(i) + 1}• *${commits.all[i].message}*\n`;
+            updateInfo += `◦ ${parseInt(i) + 1}. ${commits.all[i].message}\n`;
           }
-          updateInfo += `\n_Use "${handler}update start" to apply the update_`;
+          updateInfo += `\n_👉 Use \`${handler}update start\` to apply this update._`;
         } else if (isBetaUpdate) {
-          updateInfo = `*_BETA UPDATE AVAILABLE_*\n\n`;
-          updateInfo += `📦 Current version: *${localVersion}*\n`;
-          updateInfo += `⚠️ New commits available (version unchanged)\n\n`;
-          updateInfo += `*_CHANGELOG:_*\n\n`;
+          updateInfo = `╭━━━〔 ⚡ *OGGY-MD BETA UPDATE* 〕━━━╮\n`;
+          updateInfo += `┃ 📦 *Version:* v${localVersion}\n`;
+          updateInfo += `┃ 🔄 *New Commits:* ${commits.total}\n`;
+          updateInfo += `╰━━━━━━━━━━━━━━━━━━━━╯\n\n`;
+          updateInfo += `*📝 RECENT COMMITS:*\n`;
           for (let i in commits.all) {
-            updateInfo += `${parseInt(i) + 1}• *${commits.all[i].message}*\n`;
+            updateInfo += `◦ ${parseInt(i) + 1}. ${commits.all[i].message}\n`;
           }
-          updateInfo += `\n_Use "${handler}update beta" to apply beta updates_`;
+          updateInfo += `\n_👉 Use \`${handler}update beta\` to apply these commits._`;
         }
 
         return await message.edit(updateInfo, message.jid, processingMsg.key);
@@ -107,7 +108,7 @@ Module(
         if (!isStableUpdate) {
           if (isBetaUpdate) {
             return await message.edit(
-              `_Only beta updates available. Use "${handler}update beta" to apply them._`,
+              `_Only beta commits available. Use \`${handler}update beta\` to apply them._`,
               message.jid,
               processingMsg.key
             );
@@ -120,7 +121,7 @@ Module(
         }
 
         await message.edit(
-          "_Starting update..._",
+          "_🚀 Starting OGGY-MD update... Please wait!_",
           message.jid,
           processingMsg.key
         );
@@ -139,7 +140,7 @@ Module(
             config.RENDER_API_KEY
           );
           return await message.edit(
-            "_Render deploy started!_",
+            "_Render deploy started for OGGY-MD!_",
             message.jid,
             processingMsg.key
           );
@@ -149,14 +150,14 @@ Module(
           await git.reset("hard", ["HEAD"]);
           await git.pull();
           await message.edit(
-            `_Successfully updated to version ${remoteVersion}. Please manually update npm modules if applicable!_`,
+            `_✅ OGGY-MD updated successfully to v${remoteVersion}! Bot is restarting..._`,
             message.jid,
             processingMsg.key
           );
           process.exit(0);
         } else {
           return await message.edit(
-            "_Please visit the hosted platform and hit deploy to update._",
+            "_Please visit your hosting platform to deploy update._",
             message.jid,
             processingMsg.key
           );
@@ -164,14 +165,14 @@ Module(
       } else if (command === "beta") {
         if (!hasCommits) {
           return await message.edit(
-            "_No beta updates available!_",
+            "_No new commits available!_",
             message.jid,
             processingMsg.key
           );
         }
 
         await message.edit(
-          "_Starting beta update..._",
+          "_🔄 Pulling recent GitHub commits for OGGY-MD..._",
           message.jid,
           processingMsg.key
         );
@@ -200,23 +201,23 @@ Module(
           await git.reset("hard", ["HEAD"]);
           await git.pull();
           await message.edit(
-            `_Successfully applied beta update (${commits.total} commit${
+            `_✅ OGGY-MD successfully updated with ${commits.total} commit${
               commits.total > 1 ? "s" : ""
-            }). Please manually update npm modules if applicable!_`,
+            }! Bot is restarting..._`,
             message.jid,
             processingMsg.key
           );
           process.exit(0);
         } else {
           return await message.edit(
-            "_Please visit the hosted platform and hit deploy to update._",
+            "_Please visit your hosting platform to deploy update._",
             message.jid,
             processingMsg.key
           );
         }
       } else {
         return await message.edit(
-          `_Invalid command. Use "${handler}update" to check updates, "${handler}update start" for stable updates, or "${handler}update beta" for beta updates._`,
+          `_Invalid command. Use \`${handler}update\` to check updates, or \`${handler}update beta\` to pull recent commits._`,
           message.jid,
           processingMsg.key
         );
@@ -224,7 +225,7 @@ Module(
     } catch (error) {
       console.error("Update error:", error);
       return await message.edit(
-        "_An error occurred while checking for updates._",
+        "_An error occurred while updating OGGY-MD._",
         message.jid,
         processingMsg.key
       );
