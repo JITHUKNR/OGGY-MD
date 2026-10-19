@@ -164,22 +164,89 @@ async function getVideoInfo(url) {
   };
 }
 
+// BULLETPROOF YOUTUBE SEARCH ENGINE (USES VPS COOKIES + BACKUP APIS)
 async function searchYoutube(query, limit = 10) {
+  const cleanQ = query.replace(/["\\]/g, "").trim();
+
+  // METHOD 1: Fast yt-dlp Flat-Playlist Search with Cookies (Never Blocked on VPS)
+  try {
+    const raw = await runCmd(
+      `yt-dlp ${YT_FLAGS} --flat-playlist --no-warnings --print "%(id)s|||%(title)s|||%(duration_string)s|||%(uploader)s|||%(view_count)s" "ytsearch${limit}:${cleanQ}"`
+    );
+    if (raw) {
+      const lines = raw.split("\n").filter((l) => l.trim().length > 0);
+      const items = [];
+      for (const line of lines) {
+        const parts = line.split("|||");
+        const id = parts[0]?.trim();
+        if (!id) continue;
+        const title = parts[1]?.trim() || "YouTube Video";
+        const duration = parts[2]?.trim() && parts[2] !== "NA" ? parts[2].trim() : "";
+        const uploader = parts[3]?.trim() && parts[3] !== "NA" ? parts[3].trim() : "YouTube";
+        const views = parts[4]?.trim() && parts[4] !== "NA" ? parseInt(parts[4]) || 0 : 0;
+
+        items.push({
+          title,
+          duration,
+          views,
+          channel: { name: uploader },
+          url: `https://www.youtube.com/watch?v=${id}`,
+          thumbnail: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+          uploadedAt: "",
+        });
+      }
+      if (items.length > 0) return items;
+    }
+  } catch (e) {
+    console.error("yt-dlp search error:", e);
+  }
+
+  // METHOD 2: Free Public YouTube API Fallback
+  const fallbackApis = [
+    `https://api.siputzx.my.id/api/s/youtube?query=${encodeURIComponent(cleanQ)}`,
+    `https://vid.priv.au/api/v1/search?q=${encodeURIComponent(cleanQ)}&type=video`,
+    `https://invidious.nerdvpn.de/api/v1/search?q=${encodeURIComponent(cleanQ)}&type=video`
+  ];
+
+  for (const api of fallbackApis) {
+    try {
+      const res = await axios.get(api, { timeout: 8000 });
+      let videos = [];
+      if (Array.isArray(res.data?.data)) videos = res.data.data;
+      else if (Array.isArray(res.data)) videos = res.data;
+
+      if (videos.length > 0) {
+        return videos.slice(0, limit).map((v) => ({
+          title: v.title || "YouTube Video",
+          duration: v.duration_string || v.timestamp || (v.lengthSeconds ? `${Math.floor(v.lengthSeconds / 60)}:${v.lengthSeconds % 60}` : ""),
+          views: v.views || v.viewCount || 0,
+          channel: { name: v.author?.name || v.author || v.channel?.name || "YouTube" },
+          url: v.url || `https://www.youtube.com/watch?v=${v.videoId || v.id}`,
+          thumbnail: v.thumbnail || (v.videoThumbnails && v.videoThumbnails[0]?.url) || `https://i.ytimg.com/vi/${v.videoId || v.id}/hqdefault.jpg`,
+          uploadedAt: v.publishedText || v.uploadedAt || "",
+        }));
+      }
+    } catch (err) {}
+  }
+
+  // METHOD 3: Native yt-search npm fallback
   try {
     const yts = require("yt-search");
-    const s = await yts(query);
-    return (s.videos || []).slice(0, limit).map((v) => ({
-      title: v.title,
-      duration: v.timestamp,
-      views: v.views,
-      channel: { name: v.author?.name || "YouTube" },
-      url: v.url,
-      thumbnail: v.thumbnail,
-      uploadedAt: v.ago,
-    }));
-  } catch (err) {
-    return [];
-  }
+    const s = await yts(cleanQ);
+    if (s.videos && s.videos.length > 0) {
+      return s.videos.slice(0, limit).map((v) => ({
+        title: v.title,
+        duration: v.timestamp,
+        views: v.views,
+        channel: { name: v.author?.name || "YouTube" },
+        url: v.url,
+        thumbnail: v.thumbnail,
+        uploadedAt: v.ago,
+      }));
+    }
+  } catch (err) {}
+
+  return [];
 }
 
 function formatViews(views) {
@@ -209,60 +276,37 @@ async function getSafeJpegThumb(url) {
   return null;
 }
 
-// INLINE PREVIEW CARD HELPER (NO ZOOM + REAL METADATA + AUDIO)
+// ADVANCED INLINE AUDIO CARD (NO EXTERNAL REDIRECT + METADATA)
 async function sendInlineSong(sock, jid, result, quotedData, customUrl = "") {
-  const cleanTitle = (result.title || "Audio").replace(/[\\/:*?"<>|]/g, "").substring(0, 50).trim();
-  const artist = result.uploader || result.channel?.name || "Music Artist";
-  const songUrl = customUrl || result.url || "https://www.youtube.com";
-  const isInsta = /instagram\.com/i.test(songUrl);
-
-  const headerTitle = isInsta ? "INSTAGRAM MUSIC" : "YOUTUBE MUSIC";
-  let caption = `╭━━━〔 🎵 *${headerTitle}* 〕━━━╮\n`;
-  caption += `┃ 🎶 *Title:* ${cleanTitle}\n`;
-  caption += `┃ 👤 *Artist:* ${artist}\n`;
-  if (result.duration) {
-    caption += `┃ ⏱️ *Duration:* ${result.duration}\n`;
-  }
-  caption += `╰━━━━━━━━━━━━━━━━━━━━━╯`;
+  const cleanTitle = (result.title || "Audio Track").replace(/[\\/:*?"<>|]/g, "").substring(0, 48).trim();
+  const artist = result.uploader || result.channel?.name || "Official Artist";
+  const ext = path.extname(result.path) || ".m4a";
 
   const cardPayload = {
-    text: caption,
+    audio: fs.readFileSync(result.path),
+    mimetype: ext === ".mp3" ? "audio/mpeg" : "audio/mp4",
+    ptt: false,
+    fileName: `${cleanTitle}${ext}`,
+    contextInfo: {
+      externalAdReply: {
+        title: cleanTitle,
+        body: `👤 ${artist} • ⚡ OGGY-MD`,
+        mediaType: 1,
+        renderLargerThumbnail: true,
+        showAdAttribution: false,
+        sourceUrl: "https://whatsapp.com", // തൊട്ടാലും പുറത്തേക്ക് റീഡയറക്ട് ആവാതെ ഇൻലൈനായി നിൽക്കും
+      },
+    },
   };
 
   if (result.thumbnail) {
     const thumbBuffer = await getSafeJpegThumb(result.thumbnail);
     if (thumbBuffer) {
-      cardPayload.contextInfo = {
-        externalAdReply: {
-          title: cleanTitle,
-          body: artist,
-          mediaType: 1,
-          thumbnail: thumbBuffer,
-          renderLargerThumbnail: true,
-          showAdAttribution: false,
-          sourceUrl: songUrl,
-        },
-      };
+      cardPayload.contextInfo.externalAdReply.thumbnail = thumbBuffer;
     }
   }
 
-  try {
-    await sock.sendMessage(jid, cardPayload, { quoted: quotedData });
-  } catch (err) {
-    await sock.sendMessage(jid, { text: caption }, { quoted: quotedData }).catch(() => {});
-  }
-
-  const ext = path.extname(result.path) || ".m4a";
-  await sock.sendMessage(
-    jid,
-    {
-      audio: fs.readFileSync(result.path),
-      mimetype: ext === ".mp3" ? "audio/mpeg" : "audio/mp4",
-      ptt: false,
-      fileName: `${cleanTitle}${ext}`,
-    },
-    { quoted: quotedData }
-  );
+  await sock.sendMessage(jid, cardPayload, { quoted: quotedData });
 }
 
 // ==========================================
@@ -272,7 +316,7 @@ Module(
   {
     pattern: "song ?(.*)",
     fromMe: fromMe,
-    desc: "Search YouTube or download audio directly from YouTube or Instagram link",
+    desc: "Download high quality audio from YouTube or Instagram",
     usage: ".song <query or link>",
     use: "download",
   },
@@ -280,14 +324,12 @@ Module(
     let input = match[1] || message.reply_message?.text;
     if (!input) {
       return await message.sendReply(
-        `╭━━━〔 ⚡ *OGGY-MD AUDIO* 〕━━━╮\n` +
-        `┃ ❓ *Missing Input!*\n` +
-        `┃ 📌 Provide a song name, YouTube link,\n` +
-        `┃    or Instagram Reel link.\n` +
-        `┃\n` +
-        `┃ 📝 *Example:* \`.song Faded Alan Walker\`\n` +
-        `┃ 📝 *Example:* \`.song https://instagram.com/reel/...\`\n` +
-        `╰━━━━━━━━━━━━━━━━━━━━━╯`
+        `⚡ *OGGY-MD* • ᴍᴜꜱɪᴄ ᴇɴɢɪɴᴇ\n\n` +
+        `✦ *Status:* Missing Input\n` +
+        `✦ *Usage:* \`.song <name or link>\`\n\n` +
+        `◈ *Examples:*\n` +
+        `• \`.song Faded Alan Walker\`\n` +
+        `• \`.song https://instagram.com/reel/...\``
       );
     }
 
@@ -299,18 +341,14 @@ Module(
     // CASE A-1: INSTAGRAM REGULAR POST NOTICE
     if (isInstaPost) {
       return await message.sendReply(
-        `╭━━━〔 ⚠️ *OGGY-MD NOTICE* 〕━━━╮\n` +
-        `┃ ❌ *Audio Extraction Unavailable!*\n` +
-        `┃\n` +
-        `┃ 📌 *Reason:* This is a standard photo post.\n` +
-        `┃    Standard posts do not hold audio streams.\n` +
-        `┃ 💡 *Tip:* Please share an *Instagram Reel*\n` +
-        `┃    or *YouTube link* to download audio.\n` +
-        `╰━━━━━━━━━━━━━━━━━━━━━╯`
+        `⚡ *OGGY-MD* • ᴀʟᴇʀᴛ\n\n` +
+        `✦ *Status:* Audio Unavailable\n` +
+        `✦ *Reason:* Regular photo posts do not have audio streams.\n` +
+        `✦ *Tip:* Use Reel or YouTube links for audio downloads.`
       );
     }
 
-    // CASE A-2: INSTAGRAM REEL AUDIO WITH LIVE ANIMATION
+    // CASE A-2: INSTAGRAM REEL AUDIO WITH NEON ANIMATION
     if (isInstaReel) {
       const urlMatch = input.match(/\bhttps?:\/\/\S+/gi);
       const url = urlMatch ? urlMatch[0] : input;
@@ -319,10 +357,9 @@ Module(
       let audioPath;
       try {
         downloadMsg = await message.sendReply(
-          `╭━━━〔 ⚡ *OGGY-MD* 〕━━━╮\n` +
-          `┃ 📥 *Fetching Reel Audio...*\n` +
-          `┃ ▰▱▱▱▱▱▱▱ 25%\n` +
-          `╰━━━━━━━━━━━━━━━━━━━━━╯`
+          `⚡ *OGGY-MD* • ɴᴇᴏɴ ᴍᴜꜱɪᴄ\n\n` +
+          `✦ ꜰᴇᴛᴄʜɪɴɢ ʀᴇᴇʟ ᴀᴜᴅɪᴏ...\n` +
+          `◈ ▰▰▱▱▱▱▱▱ [25%] 💫`
         );
 
         const result = await downloadInstaAudio(url);
@@ -330,10 +367,9 @@ Module(
 
         if (downloadMsg && downloadMsg.key) {
           await message.edit(
-            `╭━━━〔 ⚡ *OGGY-MD* 〕━━━╮\n` +
-            `┃ ⚙️ *Processing Audio Track...*\n` +
-            `┃ ▰▰▰▰▰▱▱▱ 70%\n` +
-            `╰━━━━━━━━━━━━━━━━━━━━━╯`,
+            `⚡ *OGGY-MD* • ɴᴇᴏɴ ᴍᴜꜱɪᴄ\n\n` +
+            `✦ ᴇɴᴄᴏᴅɪɴɢ ʜᴅ ᴀᴜᴅɪᴏ...\n` +
+            `◈ ▰▰▰▰▰▱▱▱ [70%] ✨`,
             message.jid,
             downloadMsg.key
           ).catch(() => {});
@@ -341,10 +377,9 @@ Module(
 
         if (downloadMsg && downloadMsg.key) {
           await message.edit(
-            `╭━━━〔 ⚡ *OGGY-MD* 〕━━━╮\n` +
-            `┃ 🚀 *Uploading Song...*\n` +
-            `┃ ▰▰▰▰▰▰▰▰ 100%\n` +
-            `╰━━━━━━━━━━━━━━━━━━━━━╯`,
+            `⚡ *OGGY-MD* • ɴᴇᴏɴ ᴍᴜꜱɪᴄ\n\n` +
+            `✦ ᴜᴘʟᴏᴀᴅɪɴɢ ᴛᴏ ᴄʜᴀᴛ...\n` +
+            `◈ ▰▰▰▰▰▰▰▰ [100%] 🚀`,
             message.jid,
             downloadMsg.key
           ).catch(() => {});
@@ -357,25 +392,18 @@ Module(
         }
         if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
       } catch (err) {
-        console.error("Instagram audio download error:", err);
+        console.error("Instagram audio error:", err);
         if (downloadMsg) {
-          await message.edit(
-            `╭━━━〔 ❌ *OGGY-MD ERROR* 〕━━━╮\n` +
-            `┃ Failed to extract Instagram audio!\n` +
-            `┃ Ensure the Reel is public and accessible.\n` +
-            `╰━━━━━━━━━━━━━━━━━━━━━╯`,
-            message.jid,
-            downloadMsg.key
-          );
+          await message.edit(`✦ *Error:* Failed to download Reel audio. Ensure link is public.`, message.jid, downloadMsg.key);
         } else {
-          await message.sendReply("_❌ Download failed. Please verify the Instagram Reel link._");
+          await message.sendReply(`✦ *Error:* Failed to download Reel audio.`);
         }
         if (audioPath && fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
       }
       return;
     }
 
-    // CASE B: YOUTUBE DIRECT LINK
+    // CASE B: YOUTUBE DIRECT LINK WITH NEON ANIMATION
     if (isYtUrl) {
       const urlMatch = input.match(/\bhttps?:\/\/\S+/gi);
       const url = urlMatch ? urlMatch[0] : input;
@@ -384,20 +412,18 @@ Module(
       let audioPath;
       try {
         downloadMsg = await message.sendReply(
-          `╭━━━〔 ⚡ *OGGY-MD* 〕━━━╮\n` +
-          `┃ 🎵 *Downloading YouTube Audio...*\n` +
-          `┃ ▰▰▰▱▱▱▱▱ 40%\n` +
-          `╰━━━━━━━━━━━━━━━━━━━━━╯`
+          `⚡ *OGGY-MD* • ɴᴇᴏɴ ᴍᴜꜱɪᴄ\n\n` +
+          `✦ ᴅᴏᴡɴʟᴏᴀᴅɪɴɢ ᴛʀᴀᴄᴋ...\n` +
+          `◈ ▰▰▱▱▱▱▱▱ [30%] 💫`
         );
         const result = await downloadAudio(url);
         audioPath = result.path;
 
         if (downloadMsg && downloadMsg.key) {
           await message.edit(
-            `╭━━━〔 ⚡ *OGGY-MD* 〕━━━╮\n` +
-            `┃ 🚀 *Sending Audio...*\n` +
-            `┃ ▰▰▰▰▰▰▰▰ 100%\n` +
-            `╰━━━━━━━━━━━━━━━━━━━━━╯`,
+            `⚡ *OGGY-MD* • ɴᴇᴏɴ ᴍᴜꜱɪᴄ\n\n` +
+            `✦ ᴜᴘʟᴏᴀᴅɪɴɢ ᴛᴏ ᴄʜᴀᴛ...\n` +
+            `◈ ▰▰▰▰▰▰▰▰ [100%] 🚀`,
             message.jid,
             downloadMsg.key
           ).catch(() => {});
@@ -410,44 +436,42 @@ Module(
         }
         if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
       } catch (err) {
-        console.error("Song URL download error:", err);
+        console.error("Song URL error:", err);
         if (downloadMsg) {
-          await message.edit("_❌ Download failed! Please try again._", message.jid, downloadMsg.key);
+          await message.edit(`✦ *Error:* Download failed. Please try again.`, message.jid, downloadMsg.key);
         } else {
-          await message.sendReply("_❌ Download failed. Please try again._");
+          await message.sendReply(`✦ *Error:* Download failed.`);
         }
         if (audioPath && fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
       }
       return;
     }
 
-    // CASE C: YOUTUBE TEXT SEARCH
+    // CASE C: YOUTUBE TEXT SEARCH (CLEAN SELECTION LIST)
     try {
       const searchMsg = await message.sendReply(
-        `╭━━━〔 ⚡ *OGGY-MD* 〕━━━╮\n` +
-        `┃ 🔍 *Searching YouTube...*\n` +
-        `╰━━━━━━━━━━━━━━━━━━━━━╯`
+        `⚡ *OGGY-MD* • ᴍᴜꜱɪᴄ\n\n` +
+        `✦ *Searching YouTube...* 💫`
       );
       const results = await searchYoutube(input, 10);
 
       if (!results || results.length === 0) {
-        return await message.edit("_❌ No results found on YouTube!_", message.jid, searchMsg.key);
+        return await message.edit(`✦ *Error:* No matching songs found on YouTube!`, message.jid, searchMsg.key);
       }
 
-      let resultText = "╭───〔 ⚡ *OGGY-MD SEARCH* ⚡ 〕───\n";
-      resultText += `│ _Results for:_ *${input}*\n╰────────────────────────\n\n`;
+      let resultText = `⚡ *OGGY-MD* • ʏᴏᴜᴛᴜʙᴇ ꜱᴇᴀʀᴄʜ\n`;
+      resultText += `◈ *Query:* _${input}_\n\n`;
 
       results.forEach((video, index) => {
         resultText += `*${index + 1}.* ${video.title}\n`;
-        resultText += `   _Duration:_ \`${video.duration}\` | _Views:_ \`${formatViews(video.views)}\`\n`;
-        resultText += `   _Channel:_ ${video.channel.name}\n\n`;
+        resultText += `   ⏱️ \`${video.duration}\` • 👁️ \`${formatViews(video.views)}\` • 👤 _${video.channel.name}_\n\n`;
       });
 
-      resultText += "_Reply with a number (1-10) to download audio_";
+      resultText += `_Reply with a number (1-10) to download audio._`;
       await message.edit(resultText, message.jid, searchMsg.key);
     } catch (error) {
       console.error("Song search error:", error);
-      await message.sendReply("_❌ Search failed. Please try again later._");
+      await message.sendReply(`✦ *Error:* YouTube search failed. Please try again.`);
     }
   }
 );
