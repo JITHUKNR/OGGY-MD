@@ -282,52 +282,62 @@ async function getSafeJpegThumb(url) {
   return null;
 }
 
-// ADVANCED NEON INLINE PREVIEW CARD & AUDIO DISPATCHER
+// ADVANCED INLINE AUDIO CARD (DIRECT EMBEDDED PLAYER)
 async function sendInlineSong(sock, jid, result, quotedData, customUrl = "") {
-  const cleanTitle = (result.title || "Audio Track").replace(/[\\/:*?"<>|]/g, "").substring(0, 48).trim();
+  const cleanTitle = (result.title || "Audio Track").replace(/[\\/:*?"<>|]/g, "").substring(0, 50).trim();
   const artist = result.uploader || result.channel?.name || "Official Artist";
-  const songUrl = customUrl || result.url || "https://whatsapp.com";
+  const songUrl = customUrl || result.url || "https://www.youtube.com";
 
-  // STEP 1: Send Stylish Neon Header Card with Non-Redirecting Thumbnail
-  const cardPayload = {
-    text: `⚡ *OGGY-MD* • ɴᴇᴏɴ ᴍᴜꜱɪᴄ\n\n🎶 *${cleanTitle}*\n👤 _${artist}_` + (result.duration ? ` • ⏱️ \`${result.duration}\`` : ""),
+  // Fast direct thumbnail buffer fetch
+  let thumbBuffer = null;
+  if (result.thumbnail) {
+    try {
+      const res = await axios.get(result.thumbnail, {
+        responseType: "arraybuffer",
+        timeout: 7000,
+        headers: { "User-Agent": "Mozilla/5.0" },
+      });
+      thumbBuffer = Buffer.from(res.data);
+    } catch (e) {
+      console.error("Thumbnail fetch failed:", e.message);
+    }
+  }
+
+  // Single audio payload with inline music card context
+  const audioPayload = {
+    audio: fs.readFileSync(result.path),
+    mimetype: "audio/mp4",
+    ptt: false,
+    fileName: `${cleanTitle}.m4a`,
     contextInfo: {
       externalAdReply: {
         title: cleanTitle,
         body: `👤 ${artist} • ⚡ OGGY-MD`,
-        mediaType: 1,
-        renderLargerThumbnail: true,
+        mediaType: 2, // 2 = Music Player Card format
+        thumbnail: thumbBuffer,
+        mediaUrl: songUrl,
+        sourceUrl: songUrl,
+        renderLargerThumbnail: false,
         showAdAttribution: false,
-        sourceUrl: "https://whatsapp.com", // തൊട്ടാലും പുറത്തുപോകാതെ സുരക്ഷിതമായി നിൽക്കും
       },
     },
   };
 
-  if (result.thumbnail) {
-    const thumbBuffer = await getSafeJpegThumb(result.thumbnail);
-    if (thumbBuffer) {
-      cardPayload.contextInfo.externalAdReply.thumbnail = thumbBuffer;
-    }
-  }
-
   try {
-    await sock.sendMessage(jid, cardPayload, { quoted: quotedData });
+    await sock.sendMessage(jid, audioPayload, { quoted: quotedData });
   } catch (err) {
-    await sock.sendMessage(jid, { text: `⚡ *OGGY-MD* • ɴᴇᴏɴ ᴍᴜꜱɪᴄ\n\n🎶 *${cleanTitle}*\n👤 _${artist}_` }, { quoted: quotedData }).catch(() => {});
+    console.error("Audio card send error:", err);
+    await sock.sendMessage(
+      jid,
+      {
+        audio: fs.readFileSync(result.path),
+        mimetype: "audio/mp4",
+        ptt: false,
+        fileName: `${cleanTitle}.m4a`,
+      },
+      { quoted: quotedData }
+    );
   }
-
-  // STEP 2: Send Pure WhatsApp-Compliant M4A Audio
-  const ext = path.extname(result.path) || ".m4a";
-  await sock.sendMessage(
-    jid,
-    {
-      audio: fs.readFileSync(result.path),
-      mimetype: "audio/mp4",
-      ptt: false,
-      fileName: `${cleanTitle}${ext}`,
-    },
-    { quoted: quotedData }
-  );
 }
 
 // ==========================================
