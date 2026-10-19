@@ -34,51 +34,55 @@ async function getMediaType(url) {
   return "image";
 }
 
-// Hybrid Instagram Extractor: Native bot engine first + fallback APIs
+// Multi-Source Instagram Extractor: Full Carousel & Reel Support
 async function getInstagramMedia(url) {
-  const cleanUrl = url.split("?")[0].replace(/\/+$/, "") + "/";
+  const cleanUrl = url.split("?")[0].replace(/\/+$/, "");
   let results = [];
 
-  // 1. Primary: Use bot's built-in downloadGram (reliable for Reels and standard posts)
-  if (typeof downloadGram === "function") {
+  // METHOD 1: High-Performance Multi-Item Carousel APIs
+  const apis = [
+    `https://api.siputzx.my.id/api/d/igdl?url=${encodeURIComponent(cleanUrl)}`,
+    `https://bk9.fun/download/instagram?url=${encodeURIComponent(cleanUrl)}`,
+    `https://api.vreden.web.id/api/igdownload?url=${encodeURIComponent(cleanUrl)}`,
+    `https://api.davidcyriltech.my.id/download/instagram?url=${encodeURIComponent(cleanUrl)}`
+  ];
+
+  for (const api of apis) {
     try {
-      const res = await downloadGram(cleanUrl);
-      if (Array.isArray(res) && res.length > 0) {
-        results = res;
+      const resp = await axios.get(api, { timeout: 12000 });
+      let items = [];
+      const d = resp.data;
+
+      if (Array.isArray(d?.data)) items = d.data;
+      else if (Array.isArray(d?.BK9)) items = d.BK9;
+      else if (Array.isArray(d?.result)) items = d.result;
+      else if (Array.isArray(d?.urls)) items = d.urls;
+      else if (d?.url) items = [d.url];
+
+      if (items && items.length > 0) {
+        const extracted = items
+          .map((i) => (typeof i === "string" ? i : (i.url || i.download_url || i.video || i.image)))
+          .filter(Boolean);
+
+        if (extracted.length > results.length) {
+          results = extracted;
+        }
+        // If multiple carousel slides found, prioritize immediately
+        if (results.length > 1) break;
       }
-    } catch (e) {
-      console.error("downloadGram error:", e.message);
+    } catch (err) {
+      continue;
     }
   }
 
-  // 2. Fallback: If native engine fails or is empty, try fast backup APIs
-  if (!results.length) {
-    const backupApis = [
-      `https://api.siputzx.my.id/api/d/igdl?url=${encodeURIComponent(cleanUrl)}`,
-      `https://api.davidcyriltech.my.id/download/instagram?url=${encodeURIComponent(cleanUrl)}`,
-      `https://widipe.com/download/ytdl?url=${encodeURIComponent(cleanUrl)}`,
-      `https://delirius-apiofc.vercel.app/download/instagram?url=${encodeURIComponent(cleanUrl)}`
-    ];
-
-    for (const api of backupApis) {
-      try {
-        const resp = await axios.get(api, { timeout: 12000 });
-        let items = [];
-        if (Array.isArray(resp.data?.data)) items = resp.data.data;
-        else if (Array.isArray(resp.data?.result)) items = resp.data.result;
-        else if (Array.isArray(resp.data?.urls)) items = resp.data.urls;
-        else if (resp.data?.url) items = [resp.data.url];
-
-        if (items && items.length > 0) {
-          results = items
-            .map((i) => (typeof i === "string" ? i : (i.url || i.download_url || i.video || i.image)))
-            .filter(Boolean);
-          if (results.length > 0) break;
-        }
-      } catch (err) {
-        continue;
+  // METHOD 2: Native downloadGram fallback if APIs return nothing
+  if (!results.length && typeof downloadGram === "function") {
+    try {
+      const res = await downloadGram(cleanUrl + "/");
+      if (Array.isArray(res) && res.length > 0) {
+        results = res;
       }
-    }
+    } catch (e) {}
   }
 
   return results;
@@ -88,35 +92,53 @@ Module(
   {
     pattern: "insta ?(.*)",
     fromMe: isFromMe,
-    desc: "Instagram post/reel/tv/carousel downloader",
+    desc: "Instagram post/reel/carousel downloader",
     usage: "insta link(s)",
     use: "download",
   },
   async (message, match) => {
     let mediaLinks = match[1] || message.reply_message?.text;
     if (!mediaLinks || mediaLinks.startsWith("ll")) {
-      return await message.sendReply("_*Need Instagram link(s)*_");
+      return await message.sendReply(
+        `╭━━━〔 ⚡ *OGGY-MD INSTA* 〕━━━╮\n` +
+        `┃ ❓ *Missing Link!*\n` +
+        `┃ 📌 Provide an Instagram post or reel link.\n` +
+        `┃ 📝 *Example:* \`.insta https://instagram.com/...\`\n` +
+        `╰━━━━━━━━━━━━━━━━━━━━━╯`
+      );
     }
 
     const allUrls = mediaLinks.match(/\bhttps?:\/\/\S+/gi) || [];
-    if (!allUrls.length) return await message.sendReply("_*Need Instagram link(s)*_");
+    if (!allUrls.length) {
+      return await message.sendReply("_❌ Please provide a valid Instagram URL!_");
+    }
 
     let targetUrl = allUrls[0];
     targetUrl = await checkRedirect(targetUrl);
 
     if (!targetUrl.includes("instagram.com")) {
-      return await message.sendReply("_Need a valid Instagram link!_");
+      return await message.sendReply("_❌ Need a valid Instagram link!_");
     }
 
     let downloadMsg;
     try {
-      downloadMsg = await message.sendReply("_📥 Downloading Instagram media..._");
+      // Animated Progress Bar - Step 1
+      downloadMsg = await message.sendReply(
+        `╭━━━〔 ⚡ *OGGY-MD* 〕━━━╮\n` +
+        `┃ 📥 *Fetching Instagram Media...*\n` +
+        `┃ ▰▰▱▱▱▱▱▱ 25%\n` +
+        `╰━━━━━━━━━━━━━━━━━━━━━╯`
+      );
+
       const mediaUrls = await getInstagramMedia(targetUrl);
 
       if (!mediaUrls || !mediaUrls.length) {
         if (downloadMsg) {
           await message.edit(
-            "_Failed to download! Post might be private, restricted, or expired._",
+            `╭━━━〔 ❌ *OGGY-MD ERROR* 〕━━━╮\n` +
+            `┃ Failed to fetch Instagram media!\n` +
+            `┃ Ensure the post is public and accessible.\n` +
+            `╰━━━━━━━━━━━━━━━━━━━━━╯`,
             message.jid,
             downloadMsg.key
           );
@@ -124,40 +146,49 @@ Module(
         return;
       }
 
+      // Animated Progress Bar - Step 2
+      if (downloadMsg && downloadMsg.key) {
+        await message.edit(
+          `╭━━━〔 ⚡ *OGGY-MD* 〕━━━╮\n` +
+          `┃ 🚀 *Uploading Media (${mediaUrls.length} Items)...*\n` +
+          `┃ ▰▰▰▰▰▰▰▰ 100%\n` +
+          `╰━━━━━━━━━━━━━━━━━━━━━╯`,
+          message.jid,
+          downloadMsg.key
+        ).catch(() => {});
+      }
+
       const quotedMessage = message.reply_message ? message.quoted : message.data;
 
-      // Single item (Reel or single image)
+      // CASE A: Single Media Item (Reel or Single Photo)
       if (mediaUrls.length === 1) {
         const url = mediaUrls[0];
         const type = await getMediaType(url);
-        await message.sendMessage({ url }, type, { quoted: quotedMessage });
-      } 
-      // Multiple items (Carousel slides)
-      else {
-        try {
-          const albumObject = [];
-          for (const u of mediaUrls) {
-            const type = await getMediaType(u);
-            albumObject.push(type === "video" ? { video: u } : { image: u });
+        await message.sendMessage(
+          { url },
+          type,
+          {
+            caption: `╭━━━〔 ⚡ *OGGY-MD INSTA* 〕━━━╮\n┃ ✨ *Status:* Downloaded\n┃ 👤 *Source:* Instagram\n╰━━━━━━━━━━━━━━━━━━━━━╯`,
+            quoted: quotedMessage,
           }
-          albumObject[0].caption = `_Download complete! (${mediaUrls.length} items)_`;
-          await message.client.albumMessage(message.jid, albumObject, message.data);
-        } catch (albumErr) {
-          // If albumMessage fails, send each file with a safe 1.2s delay
-          for (let i = 0; i < mediaUrls.length; i++) {
-            const u = mediaUrls[i];
-            const type = await getMediaType(u);
-            await message.sendMessage(
-              { url: u },
-              type,
-              {
-                caption: `_Slide ${i + 1} of ${mediaUrls.length}_`,
-                quoted: quotedMessage,
-              }
-            );
-            if (i < mediaUrls.length - 1) {
-              await new Promise((r) => setTimeout(r, 1200));
+        );
+      } 
+      // CASE B: Multi-Item Carousel (All Slides 1 to N)
+      else {
+        for (let i = 0; i < mediaUrls.length; i++) {
+          const u = mediaUrls[i];
+          const type = await getMediaType(u);
+          await message.sendMessage(
+            { url: u },
+            type,
+            {
+              caption: `╭━━━〔 ⚡ *OGGY-MD INSTA* 〕━━━╮\n┃ 📸 *Slide:* ${i + 1} of ${mediaUrls.length}\n┃ ⚡ *Status:* Completed\n╰━━━━━━━━━━━━━━━━━━━━━╯`,
+              quoted: quotedMessage,
             }
+          );
+          // 1-second pause to prevent WhatsApp message rate-limiting
+          if (i < mediaUrls.length - 1) {
+            await new Promise((r) => setTimeout(r, 1000));
           }
         }
       }
@@ -169,13 +200,9 @@ Module(
     } catch (err) {
       console.error("Insta error:", err?.message || err);
       if (downloadMsg) {
-        await message.edit(
-          "_Something went wrong, Please try again!_",
-          message.jid,
-          downloadMsg.key
-        );
+        await message.edit("_❌ Something went wrong, please try again!_", message.jid, downloadMsg.key);
       } else {
-        await message.sendReply("_Something went wrong, Please try again!_");
+        await message.sendReply("_❌ Something went wrong, please try again!_");
       }
     }
   }
