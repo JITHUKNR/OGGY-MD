@@ -751,7 +751,7 @@ Module(
 );
 
 // ============================================================
-// 7. INTERACTIVE TEXT LISTENER
+// 7. INTERACTIVE TEXT LISTENER (SUPPORTS NEON UI & FAST NUMBER REPLY)
 // ============================================================
 Module(
   {
@@ -759,62 +759,105 @@ Module(
     fromMe: fromMe,
   },
   async (message, match) => {
-    const numberMatch = message.text?.match(/^\d+$/);
+    const numberMatch = message.text?.trim().match(/^\d+$/);
     if (!numberMatch) return;
     const selectedNumber = parseInt(numberMatch[0]);
-    if (!message.reply_message || !message.reply_message.fromMe || !message.reply_message.message) return;
 
-    const repliedText = message.reply_message.message;
+    if (!message.reply_message) return;
+
+    const repliedText = message.reply_message.text || message.reply_message.message || "";
+    if (!repliedText || typeof repliedText !== "string") return;
+
     const sock = message.client || message;
 
-    // STEP A: SELECTION FROM .song
-    if (repliedText.includes("OGGY-MD SEARCH") || (repliedText.includes("YouTube Search Results") && repliedText.includes("to download audio"))) {
+    // STEP A: SELECTION FROM .song SEARCH LIST
+    const isSongList =
+      (repliedText.includes("YOUTUBE SEARCH") || repliedText.includes("ʏᴏᴜᴛᴜʙᴇ ꜱᴇᴀʀᴄʜ") || repliedText.includes("OGGY-MD SEARCH")) &&
+      (repliedText.includes("download audio") || repliedText.includes("Query:") || repliedText.includes("Results for:"));
+
+    if (isSongList) {
       if (selectedNumber < 1 || selectedNumber > 10) {
-        return await message.sendReply("_Please select a number between 1-10_");
+        return await message.sendReply("_Please select a valid number between 1 and 10._");
       }
 
       try {
-        const queryMatch = repliedText.match(/Results for:_\s*\*(.+?)\*/);
-        if (!queryMatch) return;
+        let query = "";
+        const qMatch = repliedText.match(/Query:\s*_?([^\n_]+)_?/i) || repliedText.match(/Results for:_\s*\*([^\n*]+)\*/i);
+        if (qMatch) query = qMatch[1].trim();
 
-        const results = await searchYoutube(queryMatch[1], 10);
-        if (!results[selectedNumber - 1]) return await message.sendReply("_Invalid selection!_");
+        let targetVideo = null;
 
-        const selectedVideo = results[selectedNumber - 1];
+        // Try getting video from search query results
+        if (query) {
+          const results = await searchYoutube(query, 10);
+          if (results && results[selectedNumber - 1]) {
+            targetVideo = results[selectedNumber - 1];
+          }
+        }
+
+        // Fallback: extract title directly from replied message line
+        if (!targetVideo) {
+          const lineRegex = new RegExp(`(?:^|\\n)\\s*\\*?${selectedNumber}\\.\\*?\\s*([^\\n]+)`);
+          const lineMatch = repliedText.match(lineRegex);
+          if (lineMatch) {
+            const rawTitle = lineMatch[1].split("|")[0].replace(/[-–]/g, " ").trim();
+            const fallbackResults = await searchYoutube(rawTitle, 1);
+            if (fallbackResults.length > 0) targetVideo = fallbackResults[0];
+          }
+        }
+
+        if (!targetVideo) {
+          return await message.sendReply("_❌ Could not find the selected track. Please search again._");
+        }
+
         let downloadMsg = await message.sendReply(
-          `╭━━━〔 ⚡ *OGGY-MD* 〕━━━╮\n` +
-          `┃ 🎵 *Downloading:* ${selectedVideo.title.substring(0, 30)}...\n` +
-          `╰━━━━━━━━━━━━━━━━━━━━━╯`
+          `⚡ *OGGY-MD* • ɴᴇᴏɴ ᴍᴜꜱɪᴄ\n\n` +
+          `✦ ᴅᴏᴡɴʟᴏᴀᴅɪɴɢ ᴛʀᴀᴄᴋ...\n` +
+          `◈ ▰▰▰▱▱▱▱▱ [35%] 💫`
         );
 
         try {
-          const result = await downloadAudio(selectedVideo.url);
-          result.thumbnail = selectedVideo.thumbnail || result.thumbnail;
-          result.uploader = selectedVideo.channel?.name || result.uploader;
-          result.duration = selectedVideo.duration || result.duration;
+          const result = await downloadAudio(targetVideo.url);
+          result.thumbnail = targetVideo.thumbnail || result.thumbnail;
+          result.uploader = targetVideo.channel?.name || result.uploader;
+          result.duration = targetVideo.duration || result.duration;
 
-          await sendInlineSong(sock, message.jid, result, message.data, selectedVideo.url);
+          if (downloadMsg && downloadMsg.key) {
+            await message.edit(
+              `⚡ *OGGY-MD* • ɴᴇᴏɴ ᴍᴜꜱɪᴄ\n\n` +
+              `✦ ᴜᴘʟᴏᴀᴅɪɴɢ ᴛᴏ ᴄʜᴀᴛ...\n` +
+              `◈ ▰▰▰▰▰▰▰▰ [100%] 🚀`,
+              message.jid,
+              downloadMsg.key
+            ).catch(() => {});
+          }
+
+          await sendInlineSong(sock, message.jid, result, message.data, targetVideo.url);
 
           if (downloadMsg && downloadMsg.key) {
             await sock.sendMessage(message.jid, { delete: downloadMsg.key }).catch(() => {});
           }
           if (fs.existsSync(result.path)) fs.unlinkSync(result.path);
         } catch (err) {
-          if (downloadMsg) await message.edit("_❌ Download failed!_", message.jid, downloadMsg.key);
+          console.error("Selection download error:", err);
+          if (downloadMsg) await message.edit(`✦ *Error:* Failed to download selected track.`, message.jid, downloadMsg.key);
         }
       } catch (error) {
-        await message.sendReply("_Failed to process your selection._");
+        console.error("Interactive song selection error:", error);
+        await message.sendReply(`✦ *Error:* Failed to process selection.`);
       }
     }
     // STEP B: SELECTION FROM .yts
-    else if (repliedText.includes("OGGY-MD SEARCH") || (repliedText.includes("YouTube Search Results") && repliedText.includes("see video details"))) {
+    else if (repliedText.includes("see video details") && (repliedText.includes("YOUTUBE SEARCH") || repliedText.includes("OGGY-MD SEARCH"))) {
       if (selectedNumber < 1 || selectedNumber > 10) return;
 
       try {
-        const queryMatch = repliedText.match(/Results for:_\s*\*(.+?)\*/);
-        if (!queryMatch) return;
+        let query = "";
+        const qMatch = repliedText.match(/Query:\s*_?([^\n_]+)_?/i) || repliedText.match(/Results for:_\s*\*([^\n*]+)\*/i);
+        if (!qMatch) return;
+        query = qMatch[1].trim();
 
-        const results = await searchYoutube(queryMatch[1], 10);
+        const results = await searchYoutube(query, 10);
         if (!results[selectedNumber - 1]) return;
 
         const selectedVideo = results[selectedNumber - 1];
@@ -824,13 +867,13 @@ Module(
           thumbnailBuffer = Buffer.from(res.data);
         } catch (e) {}
 
-        let caption = `╭───〔 ⚡ *OGGY-MD MEDIA* 〕───\n`;
-        caption += `│ *${selectedVideo.title}*\n╰────────────────────────\n\n`;
-        caption += `*Channel:* ${selectedVideo.channel.name}\n`;
-        caption += `*Duration:* \`${selectedVideo.duration}\`\n`;
-        caption += `*Views:* \`${formatViews(selectedVideo.views)}\`\n`;
-        caption += `*URL:* ${selectedVideo.url}\n\n`;
-        caption += "_Reply with:_\n*1.* Audio\n*2.* Video";
+        let caption = `⚡ *OGGY-MD* • ʏᴏᴜᴛᴜʙᴇ ɪɴꜰᴏ\n\n`;
+        caption += `◈ *Title:* ${selectedVideo.title}\n`;
+        caption += `◈ *Channel:* ${selectedVideo.channel.name}\n`;
+        caption += `◈ *Duration:* \`${selectedVideo.duration}\`\n`;
+        caption += `◈ *Views:* \`${formatViews(selectedVideo.views)}\`\n`;
+        caption += `◈ *URL:* ${selectedVideo.url}\n\n`;
+        caption += `_Reply with:_\n*1.* Audio Track\n*2.* Video Track`;
 
         if (thumbnailBuffer) {
           await sock.sendMessage(message.jid, { image: thumbnailBuffer, caption }, { quoted: message.data });
@@ -840,37 +883,31 @@ Module(
       } catch (error) {}
     }
     // STEP C: REPLY 1 (AUDIO) OR 2 (VIDEO) ON CARD
-    else if (repliedText.includes("Reply with:") && (repliedText.includes("* Audio") || repliedText.includes("1. Audio"))) {
+    else if (repliedText.includes("Reply with:") && (repliedText.includes("Audio Track") || repliedText.includes("*1.* Audio"))) {
       if (selectedNumber !== 1 && selectedNumber !== 2) return;
 
       try {
-        const urlMatch = repliedText.match(/\*URL:\*\s*(https?:\/\/\S+)/m);
+        const urlMatch = repliedText.match(/(?:URL:\*?\s*|\b)(https?:\/\/\S+)/i);
         if (!urlMatch) return;
-
         const url = urlMatch[1].trim();
 
         if (selectedNumber === 1) {
           let downloadMsg = await message.sendReply(
-            `╭━━━〔 ⚡ *OGGY-MD* 〕━━━╮\n` +
-            `┃ 🎵 *Downloading audio...*\n` +
-            `╰━━━━━━━━━━━━━━━━━━━━━╯`
+            `⚡ *OGGY-MD* • ɴᴇᴏɴ ᴍᴜꜱɪᴄ\n\n✦ ᴅᴏᴡɴʟᴏᴀᴅɪɴɢ ᴛʀᴀᴄᴋ... ▰▰▰▱▱▱ [40%]`
           );
           try {
             const result = await downloadAudio(url);
             await sendInlineSong(sock, message.jid, result, message.data, url);
-
             if (downloadMsg && downloadMsg.key) {
               await sock.sendMessage(message.jid, { delete: downloadMsg.key }).catch(() => {});
             }
             if (fs.existsSync(result.path)) fs.unlinkSync(result.path);
           } catch (e) {
-            if (downloadMsg) await message.edit("_❌ Download failed!_", message.jid, downloadMsg.key);
+            if (downloadMsg) await message.edit(`✦ *Error:* Download failed.`, message.jid, downloadMsg.key);
           }
         } else if (selectedNumber === 2) {
           let downloadMsg = await message.sendReply(
-            `╭━━━〔 ⚡ *OGGY-MD* 〕━━━╮\n` +
-            `┃ 🎬 *Downloading video...*\n` +
-            `╰━━━━━━━━━━━━━━━━━━━━━╯`
+            `⚡ *OGGY-MD* • ᴠɪᴅᴇᴏ\n\n✦ ᴅᴏᴡɴʟᴏᴀᴅɪɴɢ ᴠɪᴅᴇᴏ... ▰▰▰▱▱▱ [45%]`
           );
           try {
             const result = await downloadVideo(url, "360p");
@@ -878,7 +915,7 @@ Module(
               message.jid,
               {
                 video: fs.readFileSync(result.path),
-                caption: `_*${result.title}*_\n\n_By: OGGY-MD_`,
+                caption: `◈ *Title:* ${result.title}\n⚡ *OGGY-MD*`,
                 mimetype: "video/mp4",
               },
               { quoted: message.data }
@@ -888,36 +925,32 @@ Module(
             }
             if (fs.existsSync(result.path)) fs.unlinkSync(result.path);
           } catch (e) {
-            if (downloadMsg) await message.edit("_❌ Download failed!_", message.jid, downloadMsg.key);
+            if (downloadMsg) await message.edit(`✦ *Error:* Video download failed.`, message.jid, downloadMsg.key);
           }
         }
       } catch (e) {}
     }
     // STEP D: YTV QUALITY PICKER
-    else if (repliedText.includes("Select Video Quality") || (repliedText.includes("OGGY-MD VIDEO") && repliedText.includes("Reply with a number"))) {
+    else if (repliedText.includes("OGGY-MD VIDEO") && repliedText.includes("Reply with a number")) {
       try {
         const idMatch = repliedText.match(/\(([\w-]{11})\)/);
         if (!idMatch) return;
-
         const url = `https://www.youtube.com/watch?v=${idMatch[1]}`;
 
         if (selectedNumber === 3) {
           const downloadMsg = await message.sendReply(
-            `╭━━━〔 ⚡ *OGGY-MD* 〕━━━╮\n` +
-            `┃ 🎵 *Downloading audio...*\n` +
-            `╰━━━━━━━━━━━━━━━━━━━━━╯`
+            `⚡ *OGGY-MD* • ᴀᴜᴅɪᴏ\n\n✦ ᴅᴏᴡɴʟᴏᴀᴅɪɴɢ ᴀᴜᴅɪᴏ ᴅᴏᴄᴜᴍᴇɴᴛ...`
           );
           try {
             const result = await downloadAudio(url);
             const cleanTitle = (result.title || "YouTube Audio").replace(/[\\/:*?"<>|]/g, "").substring(0, 50).trim();
-
             await sock.sendMessage(
               message.jid,
               {
                 document: fs.readFileSync(result.path),
                 fileName: `${cleanTitle}.mp3`,
                 mimetype: "audio/mp4",
-                caption: `_*${cleanTitle}*_`,
+                caption: `◈ *Title:* ${cleanTitle}`,
               },
               { quoted: message.data }
             );
@@ -926,23 +959,20 @@ Module(
             }
             if (fs.existsSync(result.path)) fs.unlinkSync(result.path);
           } catch (e) {
-            if (downloadMsg) await message.edit("_❌ Download failed!_", message.jid, downloadMsg.key);
+            if (downloadMsg) await message.edit(`✦ *Error:* Download failed.`, message.jid, downloadMsg.key);
           }
         } else {
           const quality = selectedNumber === 2 ? "720p" : "360p";
           const downloadMsg = await message.sendReply(
-            `╭━━━〔 ⚡ *OGGY-MD* 〕━━━╮\n` +
-            `┃ 🎬 *Downloading video at ${quality}...*\n` +
-            `╰━━━━━━━━━━━━━━━━━━━━━╯`
+            `⚡ *OGGY-MD* • ᴠɪᴅᴇᴏ\n\n✦ ᴅᴏᴡɴʟᴏᴀᴅɪɴɢ ${quality} ᴠɪᴅᴇᴏ...`
           );
-
           try {
             const result = await downloadVideo(url, quality);
             await sock.sendMessage(
               message.jid,
               {
                 video: fs.readFileSync(result.path),
-                caption: `_*${result.title}*_\n\n_Quality: ${quality}_\n_By: OGGY-MD_`,
+                caption: `◈ *Title:* ${result.title}\n◈ *Quality:* ${quality}\n⚡ *OGGY-MD*`,
                 mimetype: "video/mp4",
               },
               { quoted: message.data }
@@ -952,7 +982,7 @@ Module(
             }
             if (fs.existsSync(result.path)) fs.unlinkSync(result.path);
           } catch (e) {
-            if (downloadMsg) await message.edit("_❌ Download failed!_", message.jid, downloadMsg.key);
+            if (downloadMsg) await message.edit(`✦ *Error:* Download failed.`, message.jid, downloadMsg.key);
           }
         }
       } catch (e) {}
