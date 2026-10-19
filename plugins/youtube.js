@@ -67,7 +67,50 @@ async function downloadAudio(url) {
   };
 }
 
-// 2. BULLETPROOF YT-DLP VIDEO DOWNLOADER
+// 2. INSTAGRAM REELS & POSTS AUDIO EXTRACTOR
+async function downloadInstaAudio(url) {
+  const timestamp = Date.now();
+  const cleanUrl = url.split("?")[0];
+  let title = "Instagram Audio";
+  let uploader = "Instagram Post";
+  let thumbnail = "";
+
+  try {
+    const meta = await runCmd(
+      `yt-dlp --print "%(title)s|||%(uploader)s|||%(thumbnail)s" --no-playlist "${cleanUrl}"`
+    );
+    if (meta) {
+      const parts = meta.split("\n")[0].split("|||");
+      if (parts[0] && parts[0] !== "NA") title = parts[0].trim().substring(0, 50);
+      if (parts[1] && parts[1] !== "NA") uploader = parts[1].trim();
+      if (parts[2] && parts[2] !== "NA") thumbnail = parts[2].trim();
+    }
+  } catch (e) {}
+
+  const outTemplate = path.join("/tmp", `insta_raw_${timestamp}.%(ext)s`);
+  await runCmd(`yt-dlp -f "ba/b" --no-playlist -o "${outTemplate}" "${cleanUrl}" --force-overwrites`);
+
+  const files = fs.readdirSync("/tmp").filter((f) => f.startsWith(`insta_raw_${timestamp}`));
+  if (files.length === 0) throw new Error("Instagram audio download failed");
+
+  const rawPath = path.join("/tmp", files[0]);
+  const mp3Path = path.join("/tmp", `insta_final_${timestamp}.mp3`);
+
+  // Convert downloaded audio stream to clean WhatsApp MP3
+  await runCmd(`ffmpeg -i "${rawPath}" -vn -ar 44100 -ac 2 -b:a 192k "${mp3Path}" -y`);
+  try { fs.unlinkSync(rawPath); } catch (e) {}
+
+  return {
+    path: mp3Path,
+    title: title,
+    uploader: uploader,
+    duration: "",
+    thumbnail: thumbnail,
+    url: cleanUrl,
+  };
+}
+
+// 3. BULLETPROOF YT-DLP VIDEO DOWNLOADER
 async function downloadVideo(url, quality = "360p") {
   const timestamp = Date.now();
   const cleaned = cleanYtUrl(url);
@@ -144,7 +187,7 @@ function formatViews(views) {
   return views?.toString() || "N/A";
 }
 
-// FETCHES & CONVERTS YOUTUBE THUMBNAIL TO SAFE COMPRESSED JPEG BUFFER
+// FETCHES & CONVERTS THUMBNAIL TO SAFE COMPRESSED JPEG BUFFER
 async function getSafeJpegThumb(url) {
   if (!url) return null;
   try {
@@ -167,11 +210,13 @@ async function getSafeJpegThumb(url) {
 
 // INLINE PREVIEW CARD HELPER (NO ZOOM + REAL METADATA + AUDIO)
 async function sendInlineSong(sock, jid, result, quotedData, customUrl = "") {
-  const cleanTitle = (result.title || "YouTube Audio").replace(/[\\/:*?"<>|]/g, "").substring(0, 50).trim();
-  const artist = result.uploader || result.channel?.name || "YouTube Artist";
+  const cleanTitle = (result.title || "Audio").replace(/[\\/:*?"<>|]/g, "").substring(0, 50).trim();
+  const artist = result.uploader || result.channel?.name || "Music Artist";
   const songUrl = customUrl || result.url || "https://www.youtube.com";
+  const isInsta = /instagram\.com/i.test(songUrl);
 
-  let caption = `╭━━━〔 🎵 *YOUTUBE MUSIC* 〕━━━╮\n`;
+  const headerTitle = isInsta ? "INSTAGRAM MUSIC" : "YOUTUBE MUSIC";
+  let caption = `╭━━━〔 🎵 *${headerTitle}* 〕━━━╮\n`;
   caption += `┃ 🎶 *Title:* ${cleanTitle}\n`;
   caption += `┃ 👤 *Artist:* ${artist}\n`;
   if (result.duration) {
@@ -219,13 +264,13 @@ async function sendInlineSong(sock, jid, result, quotedData, customUrl = "") {
 }
 
 // ==========================================
-// 1. SONG COMMAND
+// 1. SONG COMMAND (HANDLES YOUTUBE & INSTAGRAM)
 // ==========================================
 Module(
   {
     pattern: "song ?(.*)",
     fromMe: fromMe,
-    desc: "Search YouTube or download audio directly from link",
+    desc: "Search YouTube or download audio directly from YouTube or Instagram link",
     usage: ".song <query or link>",
     use: "download",
   },
@@ -233,14 +278,46 @@ Module(
     let input = match[1] || message.reply_message?.text;
     if (!input) {
       return await message.sendReply(
-        "_Please provide a search query or YouTube link!_\n_Example: .song faded alan walker or .song https://youtu.be/..._"
+        "_Please provide a search query, YouTube link, or Instagram Reel/Post link!_\n_Example: .song faded alan walker or .song <instagram-link>_"
       );
     }
 
     const sock = message.client || message;
-    const isUrl = /(?:youtu\.be\/|youtube\.com)/i.test(input);
+    const isInsta = /(?:instagram\.com\/(?:p|reel|tv|reels)\/)/i.test(input);
+    const isYtUrl = /(?:youtu\.be\/|youtube\.com)/i.test(input);
 
-    if (isUrl) {
+    // CASE A: INSTAGRAM REEL / POST AUDIO
+    if (isInsta) {
+      const urlMatch = input.match(/\bhttps?:\/\/\S+/gi);
+      const url = urlMatch ? urlMatch[0] : input;
+
+      let downloadMsg;
+      let audioPath;
+      try {
+        downloadMsg = await message.sendReply("_🎵 Downloading audio from Instagram, please wait..._");
+        const result = await downloadInstaAudio(url);
+        audioPath = result.path;
+
+        await sendInlineSong(sock, message.jid, result, message.data, url);
+
+        if (downloadMsg && downloadMsg.key) {
+          await sock.sendMessage(message.jid, { delete: downloadMsg.key }).catch(() => {});
+        }
+        if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
+      } catch (err) {
+        console.error("Instagram audio download error:", err);
+        if (downloadMsg) {
+          await message.edit("_Failed to download Instagram audio! Ensure the post/reel is public._", message.jid, downloadMsg.key);
+        } else {
+          await message.sendReply("_Download failed. Please check the Instagram link._");
+        }
+        if (audioPath && fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
+      }
+      return;
+    }
+
+    // CASE B: YOUTUBE LINK
+    if (isYtUrl) {
       const urlMatch = input.match(/\bhttps?:\/\/\S+/gi);
       const url = urlMatch ? urlMatch[0] : input;
 
@@ -269,6 +346,7 @@ Module(
       return;
     }
 
+    // CASE C: YOUTUBE TEXT SEARCH
     try {
       const searchMsg = await message.sendReply("_Searching YouTube..._");
       const results = await searchYoutube(input, 10);
