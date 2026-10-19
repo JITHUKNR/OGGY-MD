@@ -1,4 +1,4 @@
-Const { Module } = require("../main");
+const { Module } = require("../main");
 const fs = require("fs");
 const path = require("path");
 const { exec } = require("child_process");
