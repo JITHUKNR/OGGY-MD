@@ -282,62 +282,66 @@ async function getSafeJpegThumb(url) {
   return null;
 }
 
-// ADVANCED INLINE AUDIO CARD (DIRECT EMBEDDED PLAYER)
+// OPTION 1: 100% BULLETPROOF MUSIC CARD & AUDIO DISPATCHER
 async function sendInlineSong(sock, jid, result, quotedData, customUrl = "") {
   const cleanTitle = (result.title || "Audio Track").replace(/[\\/:*?"<>|]/g, "").substring(0, 50).trim();
   const artist = result.uploader || result.channel?.name || "Official Artist";
   const songUrl = customUrl || result.url || "https://www.youtube.com";
 
-  // Fast direct thumbnail buffer fetch
+  // STEP 1: Safe Thumbnail Fetch
   let thumbBuffer = null;
   if (result.thumbnail) {
     try {
       const res = await axios.get(result.thumbnail, {
         responseType: "arraybuffer",
-        timeout: 7000,
+        timeout: 6000,
         headers: { "User-Agent": "Mozilla/5.0" },
       });
       thumbBuffer = Buffer.from(res.data);
     } catch (e) {
-      console.error("Thumbnail fetch failed:", e.message);
+      console.error("Thumbnail fetch skipped:", e.message);
     }
   }
 
-  // Single audio payload with inline music card context
-  const audioPayload = {
-    audio: fs.readFileSync(result.path),
-    mimetype: "audio/mp4",
-    ptt: false,
-    fileName: `${cleanTitle}.m4a`,
+  // STEP 2: Send Visual Music Card
+  const cardPayload = {
+    text:
+      `⚡ *OGGY-MD* • ɴᴇᴏɴ ᴍᴜꜱɪᴄ\n\n` +
+      `🎶 *Title:* ${cleanTitle}\n` +
+      `👤 *Artist:* ${artist}\n` +
+      (result.duration ? `⏱️ *Duration:* \`${result.duration}\`\n` : "") +
+      `\n_Audio track is ready below ⬇️_`,
     contextInfo: {
       externalAdReply: {
         title: cleanTitle,
         body: `👤 ${artist} • ⚡ OGGY-MD`,
-        mediaType: 2, // 2 = Music Player Card format
+        mediaType: 1,
         thumbnail: thumbBuffer,
-        mediaUrl: songUrl,
-        sourceUrl: songUrl,
-        renderLargerThumbnail: false,
+        renderLargerThumbnail: true,
         showAdAttribution: false,
+        sourceUrl: songUrl,
       },
     },
   };
 
   try {
-    await sock.sendMessage(jid, audioPayload, { quoted: quotedData });
-  } catch (err) {
-    console.error("Audio card send error:", err);
-    await sock.sendMessage(
-      jid,
-      {
-        audio: fs.readFileSync(result.path),
-        mimetype: "audio/mp4",
-        ptt: false,
-        fileName: `${cleanTitle}.m4a`,
-      },
-      { quoted: quotedData }
-    );
+    await sock.sendMessage(jid, cardPayload, { quoted: quotedData });
+  } catch (cardErr) {
+    console.error("Card delivery error, proceeding to audio:", cardErr.message);
   }
+
+  // STEP 3: Send Pure WhatsApp-Compliant M4A Audio
+  const ext = path.extname(result.path) || ".m4a";
+  await sock.sendMessage(
+    jid,
+    {
+      audio: fs.readFileSync(result.path),
+      mimetype: "audio/mp4",
+      ptt: false,
+      fileName: `${cleanTitle}${ext}`,
+    },
+    { quoted: quotedData }
+  );
 }
 
 // ==========================================
