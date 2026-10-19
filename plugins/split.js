@@ -1,8 +1,6 @@
 const { Module } = require("../main");
 const fs = require("fs");
 const path = require("path");
-const axios = require("axios");
-const FormData = require("form-data");
 const { exec } = require("child_process");
 
 const config = require("../config");
@@ -18,66 +16,38 @@ function runCmd(cmd) {
   });
 }
 
-// 1. FREE HIGH-SPEED AI STEM SEPARATION ENGINE (SEPARATES VOCALS & BGM)
-async function separateAudio(audioFilePath) {
+// ============================================================
+// LOCAL HIGH-SPEED FFMPEG AUDIO ISOLATION (ZERO API DEPENDENCY)
+// ============================================================
+async function processAudioSeparation(inputAudioPath) {
   const timestamp = Date.now();
-  const cleanMp3Path = path.join("/tmp", `input_${timestamp}.mp3`);
+  const vocalPath = path.join("/tmp", `vocals_${timestamp}.mp3`);
+  const bgmPath = path.join("/tmp", `bgm_${timestamp}.mp3`);
 
-  // Convert to clean standard MP3 first using FFmpeg
-  await runCmd(`ffmpeg -i "${audioFilePath}" -vn -ar 44100 -ac 2 -b:a 192k "${cleanMp3Path}" -y`);
+  // 1. ISOLATE DIALOGUE / VOCALS (Bandpass + Noise Floor Filter)
+  await runCmd(
+    `ffmpeg -i "${inputAudioPath}" -af "highpass=f=200,lowpass=f=3500,afftdn=nf=-20,dynaudnorm=p=0.9" -b:a 192k "${vocalPath}" -y`
+  );
 
-  try {
-    const form = new FormData();
-    form.append("file", fs.createReadStream(cleanMp3Path));
+  // 2. ISOLATE BGM / MUSIC (Center-Channel Vocal Removal & Phase Cancellation)
+  await runCmd(
+    `ffmpeg -i "${inputAudioPath}" -af "stereotools=mlev=0.02,volume=1.5" -b:a 192k "${bgmPath}" -y`
+  );
 
-    // Upload & Process via High Quality AI Vocal/BGM Splitter API
-    const response = await axios.post("https://api.vocalremover.org/api/v1/split", form, {
-      headers: { ...form.getHeaders() },
-      timeout: 120000,
-    });
-
-    try { fs.unlinkSync(cleanMp3Path); } catch (e) {}
-
-    if (response.data && response.data.vocals && response.data.instrumental) {
-      return {
-        vocalUrl: response.data.vocals,
-        musicUrl: response.data.instrumental,
-      };
-    }
-  } catch (apiError) {
-    // Fallback to Free Open-Source AI Endpoint
-    try {
-      const form2 = new FormData();
-      form2.append("audio_file", fs.createReadStream(cleanMp3Path));
-
-      const fallbackRes = await axios.post("https://api.music-separation.workers.dev/split", form2, {
-        headers: { ...form2.getHeaders() },
-        timeout: 120000,
-      });
-
-      try { fs.unlinkSync(cleanMp3Path); } catch (e) {}
-
-      if (fallbackRes.data && fallbackRes.data.vocals) {
-        return {
-          vocalUrl: fallbackRes.data.vocals,
-          musicUrl: fallbackRes.data.instrumental || fallbackRes.data.bgm,
-        };
-      }
-    } catch (e) {}
-  }
-
-  try { fs.unlinkSync(cleanMp3Path); } catch (e) {}
-  throw new Error("Separation failed. Please try with a shorter audio clip!");
+  return {
+    vocalPath,
+    bgmPath,
+  };
 }
 
 // ============================================================
-// 1. .SPLIT / .SEPARATE COMMAND (DIVIDES INTO 2 AUDIOS)
+// .SPLIT COMMAND
 // ============================================================
 Module(
   {
     pattern: "split ?(.*)",
     fromMe: fromMe,
-    desc: "Separate dialogue and music/BGM from mixed audio",
+    desc: "Separate dialogue and music/BGM from mixed audio locally",
     usage: "Reply to audio with .split",
     use: "audio",
   },
@@ -86,12 +56,12 @@ Module(
       return await message.sendReply(
         `╭━━━〔 ⚡ *OGGY-MD AUDIO SPLIT* ⚡ 〕━━━╮\n` +
         `┃ ⚠️ *ഉപയോഗിക്കേണ്ട വിധം:*\n` +
-        `┃ ഡയലോഗും പാട്ടും മിക്സ് ആയ ഒരു ഓഡിയോ\n` +
-        `┃ അയച്ച്, അതിലേക്ക് Reply ആയി \`.split\` എന്ന് അടിക്കുക.\n` +
+        `┃ ഡയലോഗും പാട്ടും ഉള്ള ഓഡിയോയിലേക്ക്\n` +
+        `┃ Reply ആയി \`.split\` എന്ന് അയക്കുക.\n` +
         `┃\n` +
-        `┃ 🎙️ *1. Dialogue / Vocals മാത്രം*\n` +
-        `┃ 🎵 *2. BGM / Music മാത്രം*\n` +
-        `┃ എന്നിങ്ങനെ 2 ഫയലുകളായി ബോട്ട് തരും!\n` +
+        `┃ 🎙️ *1. Dialogue / Vocals*\n` +
+        `┃ 🎵 *2. BGM / Instrumental*\n` +
+        `┃ എന്നിങ്ങനെ 2 ഫയലുകളായി ലഭിക്കും!\n` +
         `╰━━━━━━━━━━━━━━━━━━━━╯`
       );
     }
@@ -99,74 +69,80 @@ Module(
     const sock = message.client || message;
     let waitMsg;
     let downloadedPath;
+    let separatedFiles = null;
 
     try {
       waitMsg = await message.sendReply(
-        "╭───〔 ⚡ *OGGY-MD AI SPLITTER* 〕───\n│ ⏳ *ഓഡിയോ വിശകലനം ചെയ്യുന്നു...*\n│ 🤖 AI വഴി ഡയലോഗും മ്യൂസികും വേർതിരിക്കുന്നു, കാത്തിരിക്കൂ...\n╰────────────────────────"
+        "╭───〔 ⚡ *OGGY-MD AUDIO SPLITTER* 〕───\n│ ⏳ *ഓഡിയോ പ്രോസസ്സ് ചെയ്യുന്നു...*\n│ 🎙️ ഡയലോഗും മ്യൂസികും വേർതിരിക്കുന്നു, കാത്തിരിക്കൂ...\n╰────────────────────────"
       );
 
       // Download replied audio
       downloadedPath = await message.reply_message.download();
 
-      // Send to AI for Separation
-      const result = await separateAudio(downloadedPath);
+      // Process locally on VPS
+      separatedFiles = await processAudioSeparation(downloadedPath);
 
-      // 1. Send Dialogue Only Audio
-      const vocalRes = await axios.get(result.vocalUrl, { responseType: "arraybuffer" });
-      await sock.sendMessage(
-        message.jid,
-        {
-          audio: Buffer.from(vocalRes.data),
-          mimetype: "audio/mp4",
-          ptt: false,
-          fileName: "Dialogue_Vocals_OGGY-MD.mp3",
-          contextInfo: {
-            externalAdReply: {
-              title: "🎙️ Dialogue / Vocals Only",
-              body: "OGGY-MD • ABHIIXZ",
-              mediaType: 1,
-              sourceUrl: "https://github.com/JITHUKNR/OGGY-MD",
+      // 1. Send Dialogue / Vocals Audio
+      if (fs.existsSync(separatedFiles.vocalPath)) {
+        await sock.sendMessage(
+          message.jid,
+          {
+            audio: fs.readFileSync(separatedFiles.vocalPath),
+            mimetype: "audio/mp4",
+            ptt: false,
+            fileName: "Dialogue_Vocals_OGGY-MD.mp3",
+            contextInfo: {
+              externalAdReply: {
+                title: "🎙️ Dialogue / Vocals Only",
+                body: "OGGY-MD • ABHIIXZ",
+                mediaType: 1,
+                sourceUrl: "https://github.com/JITHUKNR/OGGY-MD",
+              },
             },
           },
-        },
-        { quoted: message.data }
-      );
+          { quoted: message.data }
+        );
+      }
 
-      // 2. Send Music / BGM Only Audio
-      const musicRes = await axios.get(result.musicUrl, { responseType: "arraybuffer" });
-      await sock.sendMessage(
-        message.jid,
-        {
-          audio: Buffer.from(musicRes.data),
-          mimetype: "audio/mp4",
-          ptt: false,
-          fileName: "Music_BGM_OGGY-MD.mp3",
-          contextInfo: {
-            externalAdReply: {
-              title: "🎵 Music / BGM Only (Instrumental)",
-              body: "OGGY-MD • ABHIIXZ",
-              mediaType: 1,
-              sourceUrl: "https://github.com/JITHUKNR/OGGY-MD",
+      // 2. Send Music / BGM Audio
+      if (fs.existsSync(separatedFiles.bgmPath)) {
+        await sock.sendMessage(
+          message.jid,
+          {
+            audio: fs.readFileSync(separatedFiles.bgmPath),
+            mimetype: "audio/mp4",
+            ptt: false,
+            fileName: "Music_BGM_OGGY-MD.mp3",
+            contextInfo: {
+              externalAdReply: {
+                title: "🎵 Music / BGM Only",
+                body: "OGGY-MD • ABHIIXZ",
+                mediaType: 1,
+                sourceUrl: "https://github.com/JITHUKNR/OGGY-MD",
+              },
             },
           },
-        },
-        { quoted: message.data }
-      );
+          { quoted: message.data }
+        );
+      }
 
-      // Delete wait message
+      // Delete waiting message & temp files
       if (waitMsg && waitMsg.key) {
         await sock.sendMessage(message.jid, { delete: waitMsg.key }).catch(() => {});
       }
-      if (fs.existsSync(downloadedPath)) fs.unlinkSync(downloadedPath);
+      if (downloadedPath && fs.existsSync(downloadedPath)) fs.unlinkSync(downloadedPath);
+      if (separatedFiles?.vocalPath && fs.existsSync(separatedFiles.vocalPath)) fs.unlinkSync(separatedFiles.vocalPath);
+      if (separatedFiles?.bgmPath && fs.existsSync(separatedFiles.bgmPath)) fs.unlinkSync(separatedFiles.bgmPath);
     } catch (error) {
-      console.error("Audio split error:", error);
+      console.error("Split error:", error);
       if (waitMsg) {
-        await message.edit("_❌ വേർതിരിക്കാൻ സാധിച്ചില്ല! ഓഡിയോയുടെ ദൈർഘ്യം കുറച്ച് വീണ്ടും ശ്രമിക്കുക._", message.jid, waitMsg.key);
+        await message.edit("_❌ പ്രോസസ്സിംഗ് പരാജയപ്പെട്ടു. ദയവായി വീണ്ടും ശ്രമിക്കുക!_", message.jid, waitMsg.key);
       } else {
         await message.sendReply("_❌ എറർ സംഭവിച്ചു. വീണ്ടും ശ്രമിക്കുക!_");
       }
       if (downloadedPath && fs.existsSync(downloadedPath)) fs.unlinkSync(downloadedPath);
+      if (separatedFiles?.vocalPath && fs.existsSync(separatedFiles.vocalPath)) fs.unlinkSync(separatedFiles.vocalPath);
+      if (separatedFiles?.bgmPath && fs.existsSync(separatedFiles.bgmPath)) fs.unlinkSync(separatedFiles.bgmPath);
     }
   }
 );
-        
