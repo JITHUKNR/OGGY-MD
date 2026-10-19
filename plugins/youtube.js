@@ -1,4 +1,4 @@
-const { Module } = require("../main");
+Const { Module } = require("../main");
 const fs = require("fs");
 const path = require("path");
 const { exec } = require("child_process");
@@ -67,7 +67,7 @@ async function downloadAudio(url) {
   };
 }
 
-// 2. BULLETPROOF INSTAGRAM AUDIO EXTRACTOR (REELS, PHOTO-CAROUSELS & POSTS)
+// 2. BULLETPROOF INSTAGRAM REELS & POSTS AUDIO EXTRACTOR
 async function downloadInstaAudio(url) {
   const timestamp = Date.now();
   const cleanUrl = url.split("?")[0].replace(/\/+$/, "");
@@ -78,7 +78,7 @@ async function downloadInstaAudio(url) {
   const outTemplate = path.join("/tmp", `insta_raw_${timestamp}.%(ext)s`);
   const m4aPath = path.join("/tmp", `insta_final_${timestamp}.m4a`);
 
-  // Try Local yt-dlp first
+  // METHOD 1: Fast yt-dlp with Browser User-Agent and flexible format selector
   try {
     const meta = await runCmd(
       `yt-dlp --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" --print "%(title)s|||%(uploader)s|||%(thumbnail)s" --no-playlist "${cleanUrl}/"`
@@ -103,23 +103,25 @@ async function downloadInstaAudio(url) {
     }
   } catch (e) {}
 
-  // Fallback API for Instagram Photo-Carousels with Background Music
+  // METHOD 2: Free Cloud Fallback for Instagram Photos with Music & Carousel Posts
   try {
-    const res = await axios.get(`https://api.siputzx.my.id/api/d/igdl?url=${encodeURIComponent(cleanUrl)}`, { timeout: 15000 });
-    const data = res.data?.data;
-    let targetAudioStream = null;
+    const fallbackRes = await axios.get(
+      `https://api.siputzx.my.id/api/d/igdl?url=${encodeURIComponent(cleanUrl)}`,
+      { timeout: 15000 }
+    );
+    const media = fallbackRes.data?.data;
+    let targetStreamUrl = "";
 
-    if (Array.isArray(data)) {
-      const directAudio = data.find((item) => item.type === "audio" || item.url?.includes(".mp3") || item.url?.includes(".m4a"));
-      if (directAudio) targetAudioStream = directAudio.url;
-      else if (data[0]?.url) targetAudioStream = data[0].url;
-    } else if (data?.url) {
-      targetAudioStream = data.url;
+    if (Array.isArray(media) && media.length > 0) {
+      const audioObj = media.find((m) => m.type === "audio" || m.url?.includes(".mp3") || m.url?.includes(".m4a"));
+      targetStreamUrl = audioObj ? audioObj.url : media[0].url;
+    } else if (media?.url) {
+      targetStreamUrl = media.url;
     }
 
-    if (targetAudioStream) {
-      const tempStream = path.join("/tmp", `stream_${timestamp}.bin`);
-      const streamRes = await axios.get(targetAudioStream, { responseType: "arraybuffer", timeout: 20000 });
+    if (targetStreamUrl) {
+      const tempStream = path.join("/tmp", `insta_stream_${timestamp}.bin`);
+      const streamRes = await axios.get(targetStreamUrl, { responseType: "arraybuffer", timeout: 20000 });
       fs.writeFileSync(tempStream, Buffer.from(streamRes.data));
 
       await runCmd(`ffmpeg -i "${tempStream}" -vn -c:a aac -b:a 192k "${m4aPath}" -y`);
@@ -224,11 +226,13 @@ async function getSafeJpegThumb(url) {
       try { fs.unlinkSync(tmpOut); } catch (e) {}
       return buf;
     }
-  } catch (e) {}
+  } catch (e) {
+    console.error("Thumbnail conversion error:", e);
+  }
   return null;
 }
 
-// INLINE PREVIEW CARD HELPER (COMPATIBLE PLAYABLE AUDIO)
+// INLINE PREVIEW CARD HELPER (NO ZOOM + REAL METADATA + AUDIO)
 async function sendInlineSong(sock, jid, result, quotedData, customUrl = "") {
   const cleanTitle = (result.title || "Audio").replace(/[\\/:*?"<>|]/g, "").substring(0, 50).trim();
   const artist = result.uploader || result.channel?.name || "Music Artist";
@@ -244,7 +248,9 @@ async function sendInlineSong(sock, jid, result, quotedData, customUrl = "") {
   }
   caption += `╰━━━━━━━━━━━━━━━━━━━━━╯`;
 
-  const cardPayload = { text: caption };
+  const cardPayload = {
+    text: caption,
+  };
 
   if (result.thumbnail) {
     const thumbBuffer = await getSafeJpegThumb(result.thumbnail);
@@ -283,13 +289,13 @@ async function sendInlineSong(sock, jid, result, quotedData, customUrl = "") {
 }
 
 // ==========================================
-// 1. SONG COMMAND (YOUTUBE & INSTAGRAM AUDIO)
+// 1. SONG COMMAND (HANDLES YOUTUBE & INSTAGRAM)
 // ==========================================
 Module(
   {
     pattern: "song ?(.*)",
     fromMe: fromMe,
-    desc: "Search YouTube or download audio directly from YouTube or Instagram",
+    desc: "Search YouTube or download audio directly from YouTube or Instagram link",
     usage: ".song <query or link>",
     use: "download",
   },
@@ -297,7 +303,7 @@ Module(
     let input = match[1] || message.reply_message?.text;
     if (!input) {
       return await message.sendReply(
-        "_Please provide a search query, YouTube link, or Instagram link!_\n_Example: .song faded or reply to an Instagram link with .song_"
+        "_Please provide a search query, YouTube link, or Instagram Reel/Post link!_\n_Example: .song faded alan walker or .song <instagram-link>_"
       );
     }
 
@@ -305,7 +311,7 @@ Module(
     const isInsta = /(?:instagram\.com\/(?:p|reel|tv|reels)\/)/i.test(input);
     const isYtUrl = /(?:youtu\.be\/|youtube\.com)/i.test(input);
 
-    // INSTAGRAM AUDIO DOWNLOAD
+    // CASE A: INSTAGRAM REEL / POST AUDIO
     if (isInsta) {
       const urlMatch = input.match(/\bhttps?:\/\/\S+/gi);
       const url = urlMatch ? urlMatch[0] : input;
@@ -335,7 +341,7 @@ Module(
       return;
     }
 
-    // YOUTUBE LINK AUDIO DOWNLOAD
+    // CASE B: YOUTUBE LINK
     if (isYtUrl) {
       const urlMatch = input.match(/\bhttps?:\/\/\S+/gi);
       const url = urlMatch ? urlMatch[0] : input;
@@ -365,7 +371,7 @@ Module(
       return;
     }
 
-    // YOUTUBE SEARCH
+    // CASE C: YOUTUBE TEXT SEARCH
     try {
       const searchMsg = await message.sendReply("_Searching YouTube..._");
       const results = await searchYoutube(input, 10);
@@ -392,65 +398,8 @@ Module(
   }
 );
 
-// ============================================================
-// 2. INSTA COMMAND (DOWNLOADS ALL SLIDES / CAROUSEL & VIDEOS)
-// ============================================================
-Module(
-  {
-    pattern: "insta ?(.*)",
-    fromMe: fromMe,
-    desc: "Download all photos and videos from Instagram post or carousel",
-    usage: ".insta <link>",
-    use: "download",
-  },
-  async (message, match) => {
-    let input = match[1] || message.reply_message?.text;
-    if (!input) return await message.sendReply("_Please provide an Instagram link!_");
-
-    const urlMatch = input.match(/\bhttps?:\/\/\S+/gi);
-    if (!urlMatch) return await message.sendReply("_Invalid link provided!_");
-    const cleanUrl = urlMatch[0].split("?")[0].replace(/\/+$/, "");
-
-    const sock = message.client || message;
-    let waitMsg;
-
-    try {
-      waitMsg = await message.sendReply("_⏳ Fetching Instagram media (all slides)..._");
-      const res = await axios.get(`https://api.siputzx.my.id/api/d/igdl?url=${encodeURIComponent(cleanUrl)}`, { timeout: 20000 });
-      const mediaList = res.data?.data;
-
-      if (!mediaList || (Array.isArray(mediaList) && mediaList.length === 0)) {
-        return await message.edit("_No media found! Please make sure the account is public._", message.jid, waitMsg.key);
-      }
-
-      const items = Array.isArray(mediaList) ? mediaList : [mediaList];
-      const validItems = items.filter(m => m.type !== "audio" && !m.url?.endsWith(".mp3"));
-
-      for (let i = 0; i < validItems.length; i++) {
-        const item = validItems[i];
-        const itemUrl = item.url;
-        const caption = `_*Instagram Media (${i + 1}/${validItems.length})*_\n_By: OGGY-MD_`;
-
-        if (item.type === "video" || itemUrl.includes(".mp4")) {
-          await sock.sendMessage(message.jid, { video: { url: itemUrl }, caption }, { quoted: message.data });
-        } else {
-          await sock.sendMessage(message.jid, { image: { url: itemUrl }, caption }, { quoted: message.data });
-        }
-      }
-
-      if (waitMsg && waitMsg.key) {
-        await sock.sendMessage(message.jid, { delete: waitMsg.key }).catch(() => {});
-      }
-    } catch (e) {
-      console.error("Insta download error:", e);
-      if (waitMsg) await message.edit("_Failed to download Instagram media!_", message.jid, waitMsg.key);
-      else await message.sendReply("_Failed to download Instagram media!_");
-    }
-  }
-);
-
 // ==========================================
-// 3. YTS COMMAND
+// 2. YTS COMMAND
 // ==========================================
 Module(
   {
@@ -491,7 +440,7 @@ Module(
 );
 
 // ==========================================
-// 4. YTV COMMAND
+// 3. YTV COMMAND
 // ==========================================
 Module(
   {
@@ -528,13 +477,13 @@ Module(
 );
 
 // ==========================================
-// 5. VIDEO COMMAND
+// 4. VIDEO COMMAND
 // ==========================================
 Module(
   {
     pattern: "video ?(.*)",
     fromMe: fromMe,
-    desc: "Download YouTube video at best quality",
+    desc: "Download YouTube video at 360p",
     usage: ".video <link>",
     use: "download",
   },
@@ -578,7 +527,7 @@ Module(
 );
 
 // ==========================================
-// 6. YTA COMMAND
+// 5. YTA COMMAND
 // ==========================================
 Module(
   {
@@ -631,7 +580,7 @@ Module(
 );
 
 // ==========================================
-// 7. PLAY COMMAND
+// 6. PLAY COMMAND
 // ==========================================
 Module(
   {
@@ -683,7 +632,7 @@ Module(
 );
 
 // ============================================================
-// 8. INTERACTIVE TEXT LISTENER
+// 7. INTERACTIVE TEXT LISTENER
 // ============================================================
 Module(
   {
@@ -873,7 +822,7 @@ Module(
 );
 
 // ==========================================
-// 9. SPOTIFY COMMAND
+// 8. SPOTIFY COMMAND
 // ==========================================
 Module(
   {
