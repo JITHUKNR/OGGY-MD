@@ -94,14 +94,14 @@ async function downloadInstaAudio(url) {
   if (files.length === 0) throw new Error("Instagram audio download failed");
 
   const rawPath = path.join("/tmp", files[0]);
-  const mp3Path = path.join("/tmp", `insta_final_${timestamp}.mp3`);
+  const m4aPath = path.join("/tmp", `insta_final_${timestamp}.m4a`);
 
-  // Convert downloaded audio stream to clean WhatsApp MP3
-  await runCmd(`ffmpeg -i "${rawPath}" -vn -ar 44100 -ac 2 -b:a 192k "${mp3Path}" -y`);
+  // Convert downloaded audio stream to WhatsApp native AAC/M4A format
+  await runCmd(`ffmpeg -i "${rawPath}" -vn -c:a aac -b:a 192k "${m4aPath}" -y`);
   try { fs.unlinkSync(rawPath); } catch (e) {}
 
   return {
-    path: mp3Path,
+    path: m4aPath,
     title: title,
     uploader: uploader,
     duration: "",
@@ -251,13 +251,14 @@ async function sendInlineSong(sock, jid, result, quotedData, customUrl = "") {
     await sock.sendMessage(jid, { text: caption }, { quoted: quotedData }).catch(() => {});
   }
 
+  const ext = path.extname(result.path) || ".m4a";
   await sock.sendMessage(
     jid,
     {
       audio: fs.readFileSync(result.path),
-      mimetype: "audio/mp4",
+      mimetype: ext === ".mp3" ? "audio/mpeg" : "audio/mp4",
       ptt: false,
-      fileName: `${cleanTitle}.mp3`,
+      fileName: `${cleanTitle}${ext}`,
     },
     { quoted: quotedData }
   );
