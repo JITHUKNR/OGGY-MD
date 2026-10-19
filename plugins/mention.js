@@ -1,14 +1,14 @@
 const { Module } = require("../main");
 const { SUDO, HANDLERS } = require("../config");
 const config = require("../config");
-const { uploadToCatbox } = require("./utils/upload");
-
 const fs = require("fs");
 const path = require("path");
 
 var handler = HANDLERS !== "false" ? HANDLERS.split("")[0] : ".";
-
 const { setVar, delVar } = require("./manage");
+
+const LOCAL_MENTION_DIR = "/root/RAGANORK-BOT";
+const LOCAL_MENTION_FILE = path.join(LOCAL_MENTION_DIR, "mention_media");
 
 function getMentionReply() {
   try {
@@ -30,6 +30,11 @@ async function setMentionReply(data) {
 
 async function deleteMentionReply() {
   try {
+    // Delete local file if exists
+    const files = fs.readdirSync(LOCAL_MENTION_DIR).filter((f) => f.startsWith("mention_media"));
+    for (const file of files) {
+      try { fs.unlinkSync(path.join(LOCAL_MENTION_DIR, file)); } catch (e) {}
+    }
     return await delVar("MENTION_REPLY");
   } catch (error) {
     console.error("Error deleting mention reply:", error);
@@ -39,6 +44,7 @@ async function deleteMentionReply() {
 
 function isSudoUser(jid) {
   if (!jid) return false;
+  const num = jid.split("@")[0];
 
   let sudoMap = [];
   if (config.SUDO_MAP) {
@@ -50,12 +56,8 @@ function isSudoUser(jid) {
     }
   }
 
-  // Check SUDO string as well
-  if (config.SUDO && config.SUDO.includes(jid.split("@")[0])) {
-    return true;
-  }
-
-  return sudoMap.includes(jid);
+  if (config.SUDO && config.SUDO.includes(num)) return true;
+  return sudoMap.includes(jid) || sudoMap.includes(num);
 }
 
 Module(
@@ -63,8 +65,7 @@ Module(
     pattern: "mention ?(.*)",
     fromMe: true,
     desc: "Auto mention reply management for OGGY-MD",
-    usage:
-      ".mention set (reply to msg) | .mention set <text> | .mention get | .mention del | .mention help",
+    usage: ".mention set (reply to msg) | .mention set <text> | .mention get | .mention del | .mention help",
   },
   async (message, match) => {
     const args = match[1]?.trim().split(" ");
@@ -75,7 +76,7 @@ Module(
       return await message.sendReply(
         `╭━━━〔 ⚡ *OGGY-MD MENTION* ⚡ 〕━━━╮\n` +
         `┃ ⚙️ *Available Commands:*\n` +
-        `┃ ◦ \`${handler}mention set\` - Set reply (text/media)\n` +
+        `┃ ◦ \`${handler}mention set\` - Set reply (Audio/Text/Image)\n` +
         `┃ ◦ \`${handler}mention get\` - View current reply\n` +
         `┃ ◦ \`${handler}mention del\` - Delete reply\n` +
         `┃ ◦ \`${handler}mention help\` - Detailed setup guide\n` +
@@ -114,8 +115,8 @@ Module(
         if (mentionData.content) {
           responseText += `┃ 💬 *Text:* _${mentionData.content}_\n`;
         }
-        if (mentionData.url) {
-          responseText += `┃ 🔗 *Media URL:* \`${mentionData.url}\`\n`;
+        if (mentionData.localFile) {
+          responseText += `┃ 💾 *Stored:* \`Locally on Server (100% Reliable)\`\n`;
         }
         responseText += `┃ ⏱️ *Updated:* _${new Date(mentionData.timestamp).toLocaleString()}_\n`;
         responseText += `╰━━━━━━━━━━━━━━━━━━━━╯`;
@@ -130,7 +131,7 @@ Module(
               type: "text",
               content: "",
               caption: "",
-              url: "",
+              localFile: "",
               timestamp: new Date().toISOString(),
             };
 
@@ -142,34 +143,29 @@ Module(
               replyMsg.sticker
             ) {
               let mediaType = "document";
-              if (replyMsg.image) mediaType = "image";
-              else if (replyMsg.video) mediaType = "video";
-              else if (replyMsg.audio) mediaType = "audio";
-              else if (replyMsg.sticker) mediaType = "sticker";
+              let ext = "bin";
+
+              if (replyMsg.image) { mediaType = "image"; ext = "jpg"; }
+              else if (replyMsg.video) { mediaType = "video"; ext = "mp4"; }
+              else if (replyMsg.audio) { mediaType = "audio"; ext = "mp3"; }
+              else if (replyMsg.sticker) { mediaType = "sticker"; ext = "webp"; }
 
               const downloadedFilePath = await replyMsg.download();
-              const uploadResult = await uploadToCatbox(downloadedFilePath);
+              const savePath = `${LOCAL_MENTION_FILE}.${ext}`;
 
-              try {
-                fs.unlinkSync(downloadedFilePath);
-              } catch (e) {}
-
-              if (uploadResult && uploadResult.url) {
-                mentionData.type = mediaType;
-                mentionData.url = uploadResult.url;
-                mentionData.caption = replyMsg.text || "";
-              } else {
-                return await message.sendReply(
-                  "╭───〔 ⚡ *OGGY-MD SYSTEM* 〕───\n│ ❌ *Failed to upload media! Try again.*\n╰────────────────────────"
-                );
+              if (typeof downloadedFilePath === "string" && fs.existsSync(downloadedFilePath)) {
+                fs.copyFileSync(downloadedFilePath, savePath);
+                try { fs.unlinkSync(downloadedFilePath); } catch (e) {}
+              } else if (Buffer.isBuffer(downloadedFilePath)) {
+                fs.writeFileSync(savePath, downloadedFilePath);
               }
+
+              mentionData.type = mediaType;
+              mentionData.localFile = savePath;
+              mentionData.caption = replyMsg.text || "";
             } else if (replyMsg.text) {
               mentionData.type = "text";
               mentionData.content = replyMsg.text;
-            } else {
-              return await message.sendReply(
-                "╭───〔 ⚡ *OGGY-MD SYSTEM* 〕───\n│ ⚠️ *Unsupported message format!*\n╰────────────────────────"
-              );
             }
 
             const isSaved = await setMentionReply(mentionData);
@@ -178,7 +174,7 @@ Module(
                 `╭───〔 ⚡ *OGGY-MD MENTION SET* 〕───\n` +
                 `│ ✅ *Mention reply configured successfully!*\n` +
                 `│ 📁 *Type:* \`${mentionData.type.toUpperCase()}\`\n` +
-                `│ 💬 *Preview:* _${mentionData.content || mentionData.caption || "Media response"}_\n` +
+                `│ 💾 *Status:* _Saved directly to Server_\n` +
                 `╰────────────────────────`
               );
             } else {
@@ -197,7 +193,7 @@ Module(
             type: "text",
             content: input.trim(),
             caption: "",
-            url: "",
+            localFile: "",
             timestamp: new Date().toISOString(),
           };
 
@@ -215,36 +211,30 @@ Module(
         }
 
         return await message.sendReply(
-          `╭───〔 ⚡ *OGGY-MD SYSTEM* 〕───\n│ ⚠️ *Please provide text or reply to a media file!*\n│ 💡 *Example:* \`${handler}mention set Hello! ABHIIXZ is currently away.\`\n╰────────────────────────`
+          `╭───〔 ⚡ *OGGY-MD SYSTEM* 〕───\n│ ⚠️ *Please provide text or reply to an audio/media file!*\n╰────────────────────────`
         );
 
       case "help":
         const helpText = `╭━━━〔 ⚡ *OGGY-MD AUTO MENTION* ⚡ 〕━━━╮\n` +
-          `┃ ℹ️ *What is Auto Mention?*\n` +
-          `┃ ഗ്രൂപ്പുകളിലോ ചാറ്റുകളിലോ ആരെങ്കിലും നിങ്ങളെ\n` +
-          `┃ (@ABHIIXZ) അല്ലെങ്കിൽ ബോട്ടിനെ ടാഗ് ചെയ്യുമ്പോൾ\n` +
-          `┃ ഓട്ടോമാറ്റിക്കായി റിപ്ലൈ നൽകുന്ന സിസ്റ്റമാണിത്.\n` +
-          `┃\n` +
-          `┃ 🛠️ *Commands:*\n` +
-          `┃ ◦ \`${handler}mention set <text>\` - സെറ്റ് ചെയ്യുക\n` +
-          `┃ ◦ \`${handler}mention set\` - ഓഡിയോ/ഇമേജിന് റിപ്ലൈ അടിക്കുക\n` +
-          `┃ ◦ \`${handler}mention get\` - നിലവിലുള്ളത് കാണുക\n` +
-          `┃ ◦ \`${handler}mention del\` - ഒഴിവാക്കുക\n` +
-          `┃\n` +
-          `┃ 💡 *ഉദാഹരണം:*\n` +
-          `┃ \`${handler}mention set Hey! ABHIIXZ is busy now. Contact later!\`\n` +
+          `┃ ℹ️ *സെറ്റ് ചെയ്യേണ്ട വിധം:*\n` +
+          `┃ 1. നിങ്ങൾക്ക് ഇഷ്ടമുള്ള പാട്ട്/വോയ്‌സ് അയക്കുക.\n` +
+          `┃ 2. ആ പാട്ടിലേക്ക് Reply ചെയ്ത് \`${handler}mention set\` എന്ന് അടിക്കുക.\n` +
+          `┃ 3. ഇനി ഗ്രൂപ്പിൽ ആരെങ്കിലും നിങ്ങളെയോ ബോട്ടിനെയോ ടാഗ് ചെയ്യുമ്പോൾ ഈ പാട്ട് ഉടൻ റിപ്ലൈ ആയി വരും!\n` +
           `╰━━━━━━━━━━━━━━━━━━━━╯`;
 
         return await message.sendReply(helpText);
 
       default:
         return await message.sendReply(
-          `╭───〔 ⚡ *OGGY-MD* 〕───\n│ ⚠️ *Unknown subcommand:* \`${subcommand}\`\n│ 💡 Type \`${handler}mention help\` for commands.\n╰────────────────────────`
+          `╭───〔 ⚡ *OGGY-MD* 〕───\n│ ⚠️ *Unknown subcommand:* \`${subcommand}\`\n╰────────────────────────`
         );
     }
   }
 );
 
+// ============================================================
+// AUTO MENTION EVENT LISTENER (GROUP MENTIONS DETECTOR)
+// ============================================================
 Module(
   {
     on: "text",
@@ -252,41 +242,48 @@ Module(
   },
   async (message) => {
     try {
-      if (
-        !message.mention ||
-        !Array.isArray(message.mention) ||
-        message.mention.length === 0
-      ) {
+      const sock = message.client || message;
+
+      // Extract all mentioned JIDs accurately from contextInfo
+      const mentionedJids = [
+        ...(message.mention || []),
+        ...(message.data?.message?.extendedTextMessage?.contextInfo?.mentionedJid || []),
+      ];
+
+      if (!mentionedJids || mentionedJids.length === 0) {
         return;
       }
 
-      const botId = message.client.user?.lid?.split(":")[0] + "@s.whatsapp.net";
-      const botNumericId = botId?.split("@")[0];
+      // Accurate Bot phone JID detection
+      const rawBotId = sock.user?.id || sock.user?.jid || "";
+      const botNumber = rawBotId.split(":")[0]?.replace(/[^0-9]/g, "");
+      const botLid = sock.user?.lid ? sock.user.lid.split(":")[0]?.replace(/[^0-9]/g, "") : "";
 
       let isMentioned = false;
 
-      for (const mentionedJid of message.mention) {
-        const mentionedNumericId = mentionedJid?.split("@")[0];
+      for (const mentionedJid of mentionedJids) {
+        const mentionedNumber = mentionedJid.split("@")[0]?.replace(/[^0-9]/g, "");
 
-        if (mentionedNumericId === botNumericId || mentionedJid === botId) {
+        // Match Bot Number or Bot LID
+        if (mentionedNumber && (mentionedNumber === botNumber || mentionedNumber === botLid)) {
           isMentioned = true;
           break;
         }
 
+        // Match Owner / Sudo Number
         if (isSudoUser(mentionedJid)) {
           isMentioned = true;
           break;
         }
       }
 
-      if (!isMentioned) {
-        return;
-      }
+      if (!isMentioned) return;
 
       const mentionData = getMentionReply();
-      if (!mentionData) {
-        return;
-      }
+      if (!mentionData) return;
+
+      // Check if local file exists
+      const hasLocalFile = mentionData.localFile && fs.existsSync(mentionData.localFile);
 
       switch (mentionData.type) {
         case "text":
@@ -295,42 +292,55 @@ Module(
           }
           break;
 
+        case "audio":
+          if (hasLocalFile) {
+            await sock.sendMessage(
+              message.jid,
+              {
+                audio: fs.readFileSync(mentionData.localFile),
+                mimetype: "audio/mp4",
+                ptt: true, // Sends as playable voice note / audio
+              },
+              { quoted: message.data }
+            );
+          }
+          break;
+
         case "image":
-          if (mentionData.url) {
-            await message.sendReply({ url: mentionData.url }, "image", {
-              caption: mentionData.caption || "",
-            });
+          if (hasLocalFile) {
+            await sock.sendMessage(
+              message.jid,
+              {
+                image: fs.readFileSync(mentionData.localFile),
+                caption: mentionData.caption || "",
+              },
+              { quoted: message.data }
+            );
           }
           break;
 
         case "video":
-          if (mentionData.url) {
-            await message.sendReply({ url: mentionData.url }, "video", {
-              caption: mentionData.caption || "",
-            });
-          }
-          break;
-
-        case "audio":
-          if (mentionData.url) {
-            await message.sendReply({ url: mentionData.url }, "audio", {
-              ptt: true,
-              mimetype: "audio/mpeg",
-            });
+          if (hasLocalFile) {
+            await sock.sendMessage(
+              message.jid,
+              {
+                video: fs.readFileSync(mentionData.localFile),
+                caption: mentionData.caption || "",
+              },
+              { quoted: message.data }
+            );
           }
           break;
 
         case "sticker":
-          if (mentionData.url) {
-            await message.sendReply({ url: mentionData.url }, "sticker");
-          }
-          break;
-
-        case "document":
-          if (mentionData.url) {
-            await message.sendReply({ url: mentionData.url }, "document", {
-              caption: mentionData.caption || "",
-            });
+          if (hasLocalFile) {
+            await sock.sendMessage(
+              message.jid,
+              {
+                sticker: fs.readFileSync(mentionData.localFile),
+              },
+              { quoted: message.data }
+            );
           }
           break;
       }
