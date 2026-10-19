@@ -26,7 +26,7 @@ function cleanYtUrl(url) {
   return match && match[1] ? `https://www.youtube.com/watch?v=${match[1]}` : url;
 }
 
-// 1. FAST BULLETPROOF YT-DLP AUDIO DOWNLOADER WITH REAL METADATA
+// 1. FAST BULLETPROOF YT-DLP AUDIO DOWNLOADER WITH REAL METADATA & FFMPEG CONVERSION
 async function downloadAudio(url) {
   const timestamp = Date.now();
   const cleaned = cleanYtUrl(url);
@@ -50,15 +50,21 @@ async function downloadAudio(url) {
     title = `audio_${timestamp}`;
   }
 
-  const outTemplate = path.join("/tmp", `yt_aud_${timestamp}.%(ext)s`);
+  const outTemplate = path.join("/tmp", `yt_raw_${timestamp}.%(ext)s`);
+  const m4aPath = path.join("/tmp", `yt_final_${timestamp}.m4a`);
+
   await runCmd(`yt-dlp ${YT_FLAGS} -f "ba/b" --no-playlist -o "${outTemplate}" "${cleaned}" --force-overwrites`);
 
-  const files = fs.readdirSync("/tmp").filter((f) => f.startsWith(`yt_aud_${timestamp}`));
+  const files = fs.readdirSync("/tmp").filter((f) => f.startsWith(`yt_raw_${timestamp}`));
   if (files.length === 0) throw new Error("Audio download failed");
-  const finalPath = path.join("/tmp", files[0]);
+
+  const rawPath = path.join("/tmp", files[0]);
+  // Convert to clean WhatsApp-compatible AAC Audio
+  await runCmd(`ffmpeg -i "${rawPath}" -vn -c:a aac -b:a 192k "${m4aPath}" -y`);
+  try { fs.unlinkSync(rawPath); } catch (e) {}
 
   return {
-    path: finalPath,
+    path: m4aPath,
     title: title,
     uploader: uploader,
     duration: duration,
@@ -276,17 +282,15 @@ async function getSafeJpegThumb(url) {
   return null;
 }
 
-// ADVANCED INLINE AUDIO CARD (NO EXTERNAL REDIRECT + METADATA)
+// ADVANCED NEON INLINE PREVIEW CARD & AUDIO DISPATCHER
 async function sendInlineSong(sock, jid, result, quotedData, customUrl = "") {
   const cleanTitle = (result.title || "Audio Track").replace(/[\\/:*?"<>|]/g, "").substring(0, 48).trim();
   const artist = result.uploader || result.channel?.name || "Official Artist";
-  const ext = path.extname(result.path) || ".m4a";
+  const songUrl = customUrl || result.url || "https://whatsapp.com";
 
+  // STEP 1: Send Stylish Neon Header Card with Non-Redirecting Thumbnail
   const cardPayload = {
-    audio: fs.readFileSync(result.path),
-    mimetype: ext === ".mp3" ? "audio/mpeg" : "audio/mp4",
-    ptt: false,
-    fileName: `${cleanTitle}${ext}`,
+    text: `⚡ *OGGY-MD* • ɴᴇᴏɴ ᴍᴜꜱɪᴄ\n\n🎶 *${cleanTitle}*\n👤 _${artist}_` + (result.duration ? ` • ⏱️ \`${result.duration}\`` : ""),
     contextInfo: {
       externalAdReply: {
         title: cleanTitle,
@@ -294,7 +298,7 @@ async function sendInlineSong(sock, jid, result, quotedData, customUrl = "") {
         mediaType: 1,
         renderLargerThumbnail: true,
         showAdAttribution: false,
-        sourceUrl: "https://whatsapp.com", // തൊട്ടാലും പുറത്തേക്ക് റീഡയറക്ട് ആവാതെ ഇൻലൈനായി നിൽക്കും
+        sourceUrl: "https://whatsapp.com", // തൊട്ടാലും പുറത്തുപോകാതെ സുരക്ഷിതമായി നിൽക്കും
       },
     },
   };
@@ -306,7 +310,24 @@ async function sendInlineSong(sock, jid, result, quotedData, customUrl = "") {
     }
   }
 
-  await sock.sendMessage(jid, cardPayload, { quoted: quotedData });
+  try {
+    await sock.sendMessage(jid, cardPayload, { quoted: quotedData });
+  } catch (err) {
+    await sock.sendMessage(jid, { text: `⚡ *OGGY-MD* • ɴᴇᴏɴ ᴍᴜꜱɪᴄ\n\n🎶 *${cleanTitle}*\n👤 _${artist}_` }, { quoted: quotedData }).catch(() => {});
+  }
+
+  // STEP 2: Send Pure WhatsApp-Compliant M4A Audio
+  const ext = path.extname(result.path) || ".m4a";
+  await sock.sendMessage(
+    jid,
+    {
+      audio: fs.readFileSync(result.path),
+      mimetype: "audio/mp4",
+      ptt: false,
+      fileName: `${cleanTitle}${ext}`,
+    },
+    { quoted: quotedData }
+  );
 }
 
 // ==========================================
