@@ -1,15 +1,12 @@
 const { Module } = require("../main");
 const botConfig = require("../config");
-const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
 
 const isFromMe = botConfig.MODE === "public" ? false : true;
 
-// ഗ്രൂപ്പുകളിലെ ആക്ടീവ് ക്വിസുകൾ ട്രാക്ക് ചെയ്യാൻ
+// ആക്ടീവ് ക്വിസ് ട്രാക്ക് ചെയ്യാൻ
 const activeQuiz = {};
-
-// പോയിന്റുകൾ സേവ് ചെയ്യാനുള്ള ഫയൽ
 const SCORE_FILE = path.join(__dirname, "../quiz_scores.json");
 
 function getScores() {
@@ -32,52 +29,49 @@ function saveScore(jid, points) {
   }
 }
 
-// ബാക്ക്-അപ്പ് ചോദ്യങ്ങൾ (നെറ്റ്‌വർക്ക് എറർ വന്നാൽ ഉപയോഗിക്കാൻ)
-const fallbackQuestions = [
+// ചോദ്യങ്ങളുടെ ശേഖരം (സ്പോട്ടിൽ ചോദ്യം വരും, ലാഗ് ഉണ്ടാവില്ല)
+const quizDatabase = [
   {
-    question: "കേരളത്തിലെ ആദ്യത്തെ മുഖ്യമന്ത്രി ആരാണ്?",
+    q: "കേരളത്തിലെ ആദ്യത്തെ മുഖ്യമന്ത്രി ആരാണ്?",
     options: ["A) ഇ.എം.എസ്", "B) പട്ടം താണുപിള്ള", "C) സി. അച്യുതമേനോൻ", "D) ആർ. ശങ്കർ"],
-    answer: "A"
+    a: "A"
   },
   {
-    question: "'മണിച്ചിത്രത്താഴ്' സിനിമയിലെ നാഗവല്ലിക്ക് ശബ്ദം നൽകിയത് ആര്?",
+    q: "'മണിച്ചിത്രത്താഴ്' സിനിമയിലെ നാഗവല്ലിക്ക് ശബ്ദം നൽകിയത് ആര്?",
     options: ["A) ശോഭന", "B) ഭാഗ്യലക്ഷ്മി", "C) ദുർഗ്ഗ", "D) ആനന്ദവല്ലി"],
-    answer: "B"
+    a: "B"
   },
   {
-    question: "മലയാള സിനിമയിലെ ആദ്യത്തെ ശബ്ദ ചിത്രം (Talkie) ഏതാണ്?",
+    q: "മലയാള സിനിമയിലെ ആദ്യത്തെ ശബ്ദ ചിത്രം (Talkie) ഏതാണ്?",
     options: ["A) വിഗതകുമാരൻ", "B) ബാലൻ", "C) ജീവിതനൗക", "D) നീലക്കുയിൽ"],
-    answer: "B"
+    a: "B"
   },
   {
-    question: "കേരളത്തിന്റെ ഔദ്യോഗിക പക്ഷി ഏതാണ്?",
+    q: "കേരളത്തിന്റെ ഔദ്യോഗിക പക്ഷി ഏതാണ്?",
     options: ["A) മയിൽ", "B) വേഴാമ്പൽ", "C) കാക്ക", "D) കുയിൽ"],
-    answer: "B"
+    a: "B"
+  },
+  {
+    q: "'സന്ദേശം' സിനിമ സംവിധാനം ചെയ്തത് ആര്?",
+    options: ["A) സത്യൻ അന്തിക്കാട്", "B) പ്രിയദർശൻ", "C) ശ്രീനിവാസൻ", "D) ഫാസിൽ"],
+    a: "A"
+  },
+  {
+    q: "കേരളത്തിലെ ഏറ്റവും വലിയ നദി ഏതാണ്?",
+    options: ["A) ഭാരതപ്പുഴ", "B) പെരിയാർ", "C) പമ്പ", "D) ചാലിയാർ"],
+    a: "B"
+  },
+  {
+    q: "മോഹൻലാലിന് ആദ്യമായി മികച്ച നടനുള്ള ദേശീയ അവാർഡ് നേടിക്കൊടുത്ത ചിത്രം?",
+    options: ["A) കിരീടം", "B) ഭാരതം", "C) വാനപ്രസ്ഥം", "D) സ്ഫടികം"],
+    a: "B"
   }
 ];
 
-// Pollinations AI വഴി ചോദ്യം ഉണ്ടാക്കുന്ന ഫംഗ്ഷൻ
-async function generateQuizQuestion() {
-  const prompt = "Generate 1 fun and engaging trivia question in Malayalam about Kerala, Malayalam Cinema, or General Knowledge. Give exactly 4 options labeled A, B, C, D and state the correct option letter. Format strictly as JSON with keys: \"question\", \"options\" (array of 4 strings like 'A) ...'), and \"answer\" (single letter 'A', 'B', 'C', or 'D'). Only valid JSON without markdown formatting.";
-  try {
-    const res = await axios.get(`https://text.pollinations.ai/${encodeURIComponent(prompt)}?model=openai&json=true`, { timeout: 15000 });
-    let text = res.data;
-    if (typeof text === "object") return text;
-    text = text.replace(/```json/g, "").replace(/```/g, "").trim();
-    const parsed = JSON.parse(text);
-    if (parsed.question && Array.isArray(parsed.options) && parsed.answer) {
-      return parsed;
-    }
-  } catch (e) {}
-
-  // AI കിട്ടിയില്ലെങ്കിൽ ബാക്ക്-അപ്പിൽ നിന്ന് ഒരെണ്ണം എടുക്കുന്നു
-  return fallbackQuestions[Math.floor(Math.random() * fallbackQuestions.length)];
-}
-
-// 1. ക്വിസ് തുടങ്ങാനുള്ള കമാൻഡ് (.quiz)
+// 1. ചോദ്യം ചോദിക്കാൻ: .quiz അല്ലെങ്കിൽ . quiz
 Module(
   {
-    pattern: "quiz ?(.*)",
+    pattern: "\\s*quiz ?(.*)",
     fromMe: isFromMe,
     desc: "Starts a Malayalam trivia quiz",
     usage: ".quiz",
@@ -85,95 +79,96 @@ Module(
   },
   async (message) => {
     if (activeQuiz[message.jid]) {
-      return await message.sendReply("*_⚠️ ഈ ഗ്രൂപ്പിൽ നിലവിൽ ഒരു ക്വിസ് നടക്കുന്നുണ്ട്! ആദ്യം അതിന് ഉത്തരം നൽകൂ._*");
+      return await message.sendReply("*_⚠️ ഈ ഗ്രൂപ്പിൽ നിലവിൽ ഒരു ചോദ്യമുണ്ട്! .ans [ഓപ്ഷൻ] എന്ന് അടിച്ച് ഉത്തരം പറയൂ._*");
     }
 
-    const waitMsg = await message.sendReply("_⏳ പുതിയ ചോദ്യം തയ്യാറാക്കുന്നു..._");
-    const qData = await generateQuizQuestion();
+    const qData = quizDatabase[Math.floor(Math.random() * quizDatabase.length)];
 
     const quizText =
       `╭━━━〔 ⚡ *OGGY-MD QUIZ* 〕━━━╮\n` +
       `┃ ❓ *ചോദ്യം:*\n` +
-      `┃ ${qData.question}\n` +
+      `┃ ${qData.q}\n` +
       `┃\n` +
       `┃ 🇦 ${qData.options[0]}\n` +
       `┃ 🇧 ${qData.options[1]}\n` +
       `┃ 🇨 ${qData.options[2]}\n` +
       `┃ 🇩 ${qData.options[3]}\n` +
       `┃\n` +
-      `┃ ⏳ *സമയം:* 45 സെക്കൻഡ്\n` +
-      `┃ 💡 *ഉത്തരം നൽകാൻ A, B, C, അല്ലെങ്കിൽ D എന്ന് അയക്കുക!*\n` +
+      `┃ ⏳ *സമയം:* 60 സെക്കൻഡ്\n` +
+      `┃ 💡 *ഉത്തരം നൽകാൻ:* \`.ans A\` *(അല്ലെങ്കിൽ B, C, D)*\n` +
       `╰━━━━━━━━━━━━━━━━━━━━━╯`;
 
-    if (waitMsg && waitMsg.key) {
-      await message.edit(quizText, message.jid, waitMsg.key);
-    } else {
-      await message.sendMessage(message.jid, quizText);
-    }
+    await message.sendMessage(message.jid, quizText);
 
-    // ക്വിസ് സ്റ്റേറ്റ് സെറ്റ് ചെയ്യുന്നു
     activeQuiz[message.jid] = {
-      answer: qData.answer.trim().toUpperCase()[0],
+      answer: qData.a.toUpperCase(),
       timer: setTimeout(async () => {
         if (activeQuiz[message.jid]) {
           await message.sendMessage(
             message.jid,
             `╭━━━〔 ⌛ *സമയം കഴിഞ്ഞു!* 〕━━━╮\n` +
-            `┃ ആർക്കും ശരിയുത്തരം കണ്ടെത്താൻ കഴിഞ്ഞില്ല!\n` +
+            `┃ ആരും ശരിയുത്തരം നൽകിയില്ല!\n` +
             `┃ ✅ *ശരിയുത്തരം:* ${activeQuiz[message.jid].answer}\n` +
             `╰━━━━━━━━━━━━━━━━━━━━━╯`
           );
           delete activeQuiz[message.jid];
         }
-      }, 45000), // 45 സെക്കൻഡ് ടൈമർ
+      }, 60000),
     };
   }
 );
 
-// 2. ഉത്തരങ്ങൾ പരിശോധിച്ച് പോയിന്റ് നൽകുന്ന സിസ്റ്റം
+// 2. ഉത്തരം നൽകാൻ: .ans A അല്ലെങ്കിൽ .ans B
 Module(
   {
-    on: "text",
-    fromMe: false,
+    pattern: "\\s*ans ?(.*)",
+    fromMe: isFromMe,
+    desc: "Submit answer for quiz",
+    usage: ".ans A",
+    use: "game",
   },
-  async (message) => {
-    if (!message.jid || !activeQuiz[message.jid]) return;
+  async (message, match) => {
+    if (!activeQuiz[message.jid]) {
+      return await message.sendReply("_ഇവിടെ ഇപ്പോൾ ആക്ടീവ് ക്വിസ് ഒന്നുമില്ല. ചോദ്യം വരാൻ .quiz എന്ന് അയക്കൂ!_");
+    }
 
-    const userText = message.message ? message.message.trim().toUpperCase() : "";
-    
-    // യൂസർ A, B, C, D എന്നിവയിലേതെങ്കിലും അയച്ചാൽ ചെക്ക് ചെയ്യുന്നു
-    if (["A", "B", "C", "D"].includes(userText)) {
-      const current = activeQuiz[message.jid];
+    let userAns = match[1] ? match[1].trim().toUpperCase() : "";
+    if (!userAns) {
+      return await message.sendReply("_ഉത്തരം നൽകാൻ ഓപ്ഷൻ കൂടി നൽകുക! ഉദാഹരണത്തിന്: .ans A_");
+    }
 
-      if (userText === current.answer) {
-        clearTimeout(current.timer);
-        delete activeQuiz[message.jid];
+    const current = activeQuiz[message.jid];
 
-        const senderJid = message.sender || message.data?.participant || message.jid;
-        const totalPoints = saveScore(senderJid, 10);
-        const senderNum = senderJid.split("@")[0];
+    if (userAns === current.answer) {
+      clearTimeout(current.timer);
+      delete activeQuiz[message.jid];
 
-        const winMsg =
-          `╭━━━〔 🎉 *ശരിയുത്തരം!* 〕━━━╮\n` +
-          `┃ 👤 *വിജയി:* @${senderNum}\n` +
-          `┃ ✅ *ഉത്തരം:* ${userText}\n` +
-          `┃ 🏆 *പോയിന്റ്:* +10\n` +
-          `┃ 📊 *ആകെ സ്കോർ:* ${totalPoints} Pts\n` +
-          `╰━━━━━━━━━━━━━━━━━━━━━╯`;
+      const senderJid = message.sender || message.data?.participant || message.jid;
+      const totalPoints = saveScore(senderJid, 10);
+      const senderNum = senderJid.split("@")[0];
 
-        await message.client.sendMessage(message.jid, {
-          text: winMsg,
-          mentions: [senderJid],
-        }, { quoted: message.data });
-      }
+      const winMsg =
+        `╭━━━〔 🎉 *ശരിയുത്തരം!* 〕━━━╮\n` +
+        `┃ 👤 *വിജയി:* @${senderNum}\n` +
+        `┃ ✅ *ഉത്തരം:* ${userAns}\n` +
+        `┃ 🏆 *പോയിന്റ്:* +10\n` +
+        `┃ 📊 *ആകെ സ്കോർ:* ${totalPoints} Pts\n` +
+        `╰━━━━━━━━━━━━━━━━━━━━━╯`;
+
+      await message.client.sendMessage(message.jid, {
+        text: winMsg,
+        mentions: [senderJid],
+      }, { quoted: message.data });
+    } else {
+      await message.sendReply("_❌ തെറ്റായ ഉത്തരം! വീണ്ടും ശ്രമിക്കൂ..._");
     }
   }
 );
 
-// 3. ലീഡർബോർഡ് കമാൻഡ് (.leaderboard / .rank)
+// 3. ലീഡർബോർഡ് കാണാൻ: .leaderboard
 Module(
   {
-    pattern: "leaderboard ?(.*)",
+    pattern: "\\s*leaderboard ?(.*)",
     fromMe: isFromMe,
     desc: "Shows Quiz Leaderboard",
     usage: ".leaderboard",
