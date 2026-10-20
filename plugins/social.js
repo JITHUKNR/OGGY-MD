@@ -350,63 +350,53 @@ Module(
 
       const fs = require("fs");
       const { exec } = require("child_process");
-      const tempVideo = `/tmp/pin_${Date.now()}.mp4`;
 
-      // 1. yt-dlp ഉപയോഗിച്ച് Pinterest ഫയർവാൾ മറികടന്ന് ഒറിജിനൽ ഹൈ ക്വാളിറ്റിയിൽ ഡൗൺലോഡ് ചെയ്യുന്നു
-      const ytDlpCmd = `yt-dlp -f "best[ext=mp4]/best" --no-warnings -o "${tempVideo}" "${userQuery}"`;
+      let mediaUrl = null;
 
-      exec(ytDlpCmd, { timeout: 90000 }, async (ytErr) => {
-        if (!ytErr && fs.existsSync(tempVideo) && fs.statSync(tempVideo).size > 1000) {
+      // 1. പ്രാഥമികമായി ബോട്ടിന്റെ ഒറിജിനൽ ഹൈ-ക്വാളിറ്റി ലിങ്ക് എടുക്കുന്നു
+      try {
+        const res = await pinterestDl(userQuery);
+        if (res && res.result) mediaUrl = res.result;
+      } catch (e) {}
+
+      // 2. ലഭിച്ചില്ലെങ്കിൽ ബാക്ക്-അപ്പ് API
+      if (!mediaUrl) {
+        try {
+          const apiRes = await axios.get(`https://api.siputzx.my.id/api/d/pinterest?url=${encodeURIComponent(userQuery)}`, { timeout: 15000 });
+          mediaUrl = apiRes.data?.data?.video_url || apiRes.data?.data?.image_url || apiRes.data?.data?.url;
+        } catch (e) {}
+      }
+
+      if (!mediaUrl) {
+        return await message.sendReply("_Failed to find media link!_");
+      }
+
+      const isVideo = mediaUrl.includes(".mp4") || mediaUrl.includes("/videos/");
+      const tempPath = `/tmp/pin_${Date.now()}.${isVideo ? "mp4" : "jpg"}`;
+
+      // 3. 403 Forbidden ബ്ലോക്ക് മറികടക്കാൻ ലിനക്സ് curl വഴി ഒറിജിനൽ ക്വാളിറ്റിയിൽ ഡൗൺലോഡ് ചെയ്യുന്നു
+      const curlCmd = `curl -s -L -k -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" "${mediaUrl}" -o "${tempPath}"`;
+
+      exec(curlCmd, { timeout: 60000 }, async (curlErr) => {
+        if (!curlErr && fs.existsSync(tempPath) && fs.statSync(tempPath).size > 1000) {
           try {
             await message.sendMessage(
-              fs.readFileSync(tempVideo),
-              "video",
+              fs.readFileSync(tempPath),
+              isVideo ? "video" : "image",
               {
                 quoted: quotedMessage,
                 caption: "*Downloaded by WETFLAX*",
-                mimetype: "video/mp4"
+                mimetype: isVideo ? "video/mp4" : "image/jpeg"
               }
             );
-            fs.unlinkSync(tempVideo);
-            return;
-          } catch (sendErr) {
-            console.error("Pinterest send error:", sendErr);
+          } catch (sendError) {
+            console.error("Pinterest send error:", sendError);
+            await message.sendReply("_Failed to send media!_");
+          } finally {
+            if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
           }
-        }
-
-        // 2. ഫോട്ടോകൾ ആണെങ്കിലോ yt-dlp സപ്പോർട്ട് ചെയ്യാത്തതാണെങ്കിലോ ബാക്ക്-അപ്പ് API വഴി അയക്കുന്നു
-        try {
-          if (fs.existsSync(tempVideo)) fs.unlinkSync(tempVideo);
-
-          let pinterestResult;
-          try {
-            pinterestResult = await pinterestDl(userQuery);
-          } catch (e) {}
-
-          let mediaUrl = pinterestResult?.result;
-          if (!mediaUrl) {
-            const apiRes = await axios.get(`https://api.siputzx.my.id/api/d/pinterest?url=${encodeURIComponent(userQuery)}`, { timeout: 15000 });
-            mediaUrl = apiRes.data?.data?.video_url || apiRes.data?.data?.image_url || apiRes.data?.data?.url;
-          }
-
-          if (!mediaUrl) {
-            return await message.sendReply("_Failed to download media!_");
-          }
-
-          const isVideo = mediaUrl.includes(".mp4");
-          const dlRes = await axios.get(mediaUrl, { responseType: "arraybuffer", timeout: 30000 });
-
-          await message.sendMessage(
-            Buffer.from(dlRes.data),
-            isVideo ? "video" : "image",
-            {
-              quoted: quotedMessage,
-              caption: "*Downloaded by WETFLAX*",
-              mimetype: isVideo ? "video/mp4" : "image/jpeg"
-            }
-          );
-        } catch (fbErr) {
-          console.error("Pinterest fallback error:", fbErr.message);
+        } else {
+          if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
           return await message.sendReply("_Failed to download media!_");
         }
       });
