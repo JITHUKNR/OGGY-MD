@@ -354,7 +354,6 @@ Module(
 
       let url = pinterestResult && pinterestResult.result ? pinterestResult.result : null;
 
-      // Primary API fail aayaal fallback API
       if (!url) {
         try {
           const fb = await axios.get(`https://api.siputzx.my.id/api/d/pinterest?url=${encodeURIComponent(userQuery)}`, { timeout: 15000 });
@@ -370,20 +369,29 @@ Module(
         ? message.quoted
         : message.data;
 
+      await message.sendReply("*_Downloading media..._*");
+
+      const fs = require("fs");
+      const { exec } = require("child_process");
+      const isVideo = url.includes(".mp4") || url.includes("video");
+      const tempPath = `/tmp/pin_${Date.now()}.${isVideo ? "mp4" : "jpg"}`;
+
+      // curl ഉപയോഗിച്ച് ഡൗൺലോഡ് ചെയ്യുന്നത് വഴി 403 Forbidden തടയുന്നു
+      const curlCmd = `curl -sL -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" -H "Accept: */*" "${url}" -o "${tempPath}"`;
+
       try {
-        await message.sendReply("*_Downloading media..._*");
-        const mediaRes = await axios.get(url, {
-          responseType: "arraybuffer",
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Referer": "https://www.pinterest.com/"
-          },
-          timeout: 60000
+        await new Promise((resolve, reject) => {
+          exec(curlCmd, { timeout: 60000 }, (error) => {
+            if (error) return reject(error);
+            if (fs.existsSync(tempPath) && fs.statSync(tempPath).size > 1000) {
+              return resolve();
+            }
+            reject(new Error("File empty or blocked"));
+          });
         });
 
-        const isVideo = url.includes(".mp4") || (mediaRes.headers["content-type"] && mediaRes.headers["content-type"].includes("video"));
         await message.sendMessage(
-          Buffer.from(mediaRes.data),
+          fs.readFileSync(tempPath),
           isVideo ? "video" : "image",
           {
             quoted: quotedMessage,
@@ -391,8 +399,15 @@ Module(
             mimetype: isVideo ? "video/mp4" : "image/jpeg"
           }
         );
+
+        try {
+          if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+        } catch (e) {}
       } catch (streamErr) {
-        console.error("Pinterest buffer error:", streamErr.message);
+        console.error("Pinterest curl error:", streamErr.message);
+        try {
+          if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+        } catch (e) {}
         return await message.sendReply("_Failed to download media!_");
       }
     }
