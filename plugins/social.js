@@ -350,24 +350,53 @@ Module(
         pinterestResult = await pinterestDl(userQuery);
       } catch (err) {
         console.error("pinterestDl error:", err?.message || err);
-        return await message.sendReply("_Server error_");
       }
 
-      if (
-        !pinterestResult ||
-        !pinterestResult.status ||
-        !pinterestResult.result
-      )
-        return await message.sendReply(
-          "_No downloadable media found for this link_"
-        );
+      let url = pinterestResult && pinterestResult.result ? pinterestResult.result : null;
 
-      const url = pinterestResult.result;
+      // Primary API fail aayaal fallback API
+      if (!url) {
+        try {
+          const fb = await axios.get(`https://api.siputzx.my.id/api/d/pinterest?url=${encodeURIComponent(userQuery)}`, { timeout: 15000 });
+          url = fb.data?.data?.video_url || fb.data?.data?.image_url || fb.data?.data?.url;
+        } catch (e) {}
+      }
+
+      if (!url) {
+        return await message.sendReply("_No downloadable media found for this link_");
+      }
+
       const quotedMessage = message.reply_message
         ? message.quoted
         : message.data;
-      await message.sendMessage({ url }, "video", { quoted: quotedMessage });
-    } else {
+
+      try {
+        await message.sendReply("*_Downloading media..._*");
+        const mediaRes = await axios.get(url, {
+          responseType: "arraybuffer",
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Referer": "https://www.pinterest.com/"
+          },
+          timeout: 60000
+        });
+
+        const isVideo = url.includes(".mp4") || (mediaRes.headers["content-type"] && mediaRes.headers["content-type"].includes("video"));
+        await message.sendMessage(
+          Buffer.from(mediaRes.data),
+          isVideo ? "video" : "image",
+          {
+            quoted: quotedMessage,
+            caption: "*Downloaded by WETFLAX*",
+            mimetype: isVideo ? "video/mp4" : "image/jpeg"
+          }
+        );
+      } catch (streamErr) {
+        console.error("Pinterest buffer error:", streamErr.message);
+        return await message.sendReply("_Failed to download media!_");
+      }
+    }
+ else {
       let desiredCount = parseInt(userQuery.split(",")[1]) || 5;
       let searchQuery = userQuery.split(",")[0] || userQuery;
       let searchResults;
