@@ -7,7 +7,7 @@ const { getTempPath } = require("../core/helpers");
 const config = require("../config");
 
 // Paste your BotFather Telegram Bot Token here
-const TELEGRAM_BOT_TOKEN = "8720214215:AAE_dbCU82VAUWBFIOLBY4s0X9ksCWNtmOE";
+const TELEGRAM_BOT_TOKEN = "8798516024:AAEmgl2jjo5oUUHC4_jrBy_jsd7foxHNcGk";
 
 // Helper function to convert downloaded image/video into WhatsApp sticker WebP
 const convertToSticker = (inputPath, isAnimated = false) => {
