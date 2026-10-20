@@ -352,87 +352,82 @@ Module(
       let mediaUrl = null;
       let isVideo = false;
 
-      // METHOD 1: Multi-Source APIs (Insta പോലെ ഏറ്റവും വിശ്വസനീയമായ വഴികൾ)
-      const apis = [
-        `https://bk9.fun/download/pinterest?url=${encodeURIComponent(userQuery)}`,
-        `https://api.davidcyriltech.my.id/download/pinterest?url=${encodeURIComponent(userQuery)}`,
-        `https://api.siputzx.my.id/api/d/pinterest?url=${encodeURIComponent(userQuery)}`,
-        `https://api.vreden.web.id/api/pinterest?url=${encodeURIComponent(userQuery)}`
-      ];
+      // Primary: Native pinterestDl
+      try {
+        const pRes = await pinterestDl(userQuery);
+        if (pRes && pRes.result) mediaUrl = pRes.result;
+      } catch (e) {}
 
-      for (const api of apis) {
-        try {
-          const res = await axios.get(api, { timeout: 12000 });
-          const d = res.data;
-          const found = d?.BK9 || d?.result?.download_url || d?.result?.url || d?.result || d?.data?.video_url || d?.data?.image_url || d?.data?.url;
-          if (found && typeof found === "string" && found.startsWith("http")) {
-            mediaUrl = found;
-            if (mediaUrl.includes(".mp4") || mediaUrl.includes("/videos/") || d?.data?.media_type === "video") {
-              isVideo = true;
-            }
-            break;
-          }
-        } catch (e) {
-          continue;
-        }
-      }
-
-      // METHOD 2: Bot-ന്റെ സ്വന്തം pinterestDl
+      // Fallback APIs
       if (!mediaUrl) {
-        try {
-          const pRes = await pinterestDl(userQuery);
-          if (pRes && pRes.result) {
-            mediaUrl = pRes.result;
-            if (mediaUrl.includes(".mp4") || mediaUrl.includes("/videos/")) isVideo = true;
-          }
-        } catch (e) {}
+        const apis = [
+          `https://api.siputzx.my.id/api/d/pinterest?url=${encodeURIComponent(userQuery)}`,
+          `https://bk9.fun/download/pinterest?url=${encodeURIComponent(userQuery)}`,
+          `https://api.davidcyriltech.my.id/download/pinterest?url=${encodeURIComponent(userQuery)}`
+        ];
+        for (const api of apis) {
+          try {
+            const res = await axios.get(api, { timeout: 12000 });
+            const d = res.data;
+            const found = d?.data?.video_url || d?.data?.url || d?.BK9 || d?.result?.download_url || d?.result?.url || d?.result;
+            if (found && typeof found === "string" && found.startsWith("http")) {
+              mediaUrl = found;
+              break;
+            }
+          } catch (e) {}
+        }
       }
 
       if (!mediaUrl) {
         return await message.sendReply("_Failed to find media link!_");
       }
 
-      // 2. BUFFER DOWNLOAD (VPS 403 Forbidden ബ്ലോക്ക് മറികടക്കാൻ Cloudflare Proxy വഴി)
+      isVideo = mediaUrl.includes(".mp4") || mediaUrl.includes("/videos/");
+
+      const fs = require("fs");
+      const { execSync } = require("child_process");
       let mediaBuffer = null;
 
-      // A: Direct Fetch
+      // Method A: Direct fetch with Android okhttp header
       try {
-        const directRes = await axios.get(mediaUrl, {
+        const dRes = await axios.get(mediaUrl, {
           responseType: "arraybuffer",
-          headers: {
-            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"
-          },
-          timeout: 20000
+          headers: { "User-Agent": "okhttp/4.9.2", "Accept": "*/*" },
+          timeout: 25000
         });
-        if (directRes.data && directRes.data.length > 1000) {
-          mediaBuffer = Buffer.from(directRes.data);
+        const b = Buffer.from(dRes.data);
+        const head = b.slice(0, 60).toString();
+        if (!head.includes("<html") && !head.includes("<!DOC") && !head.includes("AccessDenied")) {
+          mediaBuffer = b;
         }
       } catch (e) {}
 
-      // B: Cloudflare Edge Proxy ബൈപ്പാസ്
+      // Method B: curl bypass without referer
       if (!mediaBuffer) {
+        const tempPath = `/tmp/pin_${Date.now()}.${isVideo ? "mp4" : "jpg"}`;
         try {
-          const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(mediaUrl)}`;
-          const proxyRes = await axios.get(proxyUrl, {
-            responseType: "arraybuffer",
-            timeout: 30000
-          });
-          if (proxyRes.data && proxyRes.data.length > 1000) {
-            mediaBuffer = Buffer.from(proxyRes.data);
+          execSync(`curl -sL -k -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0" -e "" "${mediaUrl}" -o "${tempPath}"`, { timeout: 35000 });
+          if (fs.existsSync(tempPath) && fs.statSync(tempPath).size > 1000) {
+            const b = fs.readFileSync(tempPath);
+            fs.unlinkSync(tempPath);
+            const head = b.slice(0, 60).toString();
+            if (!head.includes("<html") && !head.includes("<!DOC") && !head.includes("AccessDenied")) {
+              mediaBuffer = b;
+            }
           }
-        } catch (e) {}
+        } catch (e) {
+          if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+        }
       }
 
-      // C: AllOrigins Proxy ബൈപ്പാസ്
+      // Method C: Web proxy bypass
       if (!mediaBuffer) {
         try {
-          const altProxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(mediaUrl)}`;
-          const altRes = await axios.get(altProxy, {
-            responseType: "arraybuffer",
-            timeout: 30000
-          });
-          if (altRes.data && altRes.data.length > 1000) {
-            mediaBuffer = Buffer.from(altRes.data);
+          const pRes = await axios.get(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(mediaUrl)}`, { responseType: "arraybuffer", timeout: 30000 });
+          const b = Buffer.from(pRes.data);
+          const head = b.slice(0, 60).toString();
+          if (!head.includes("<html") && !head.includes("<!DOC") && !head.includes("AccessDenied")) {
+            mediaBuffer = b;
           }
         } catch (e) {}
       }
@@ -441,7 +436,6 @@ Module(
         return await message.sendReply("_Failed to download media!_");
       }
 
-      // 3. SEND MESSAGE
       try {
         await message.sendMessage(
           mediaBuffer,
@@ -454,121 +448,15 @@ Module(
         );
       } catch (sendErr) {
         console.error("Pinterest send error:", sendErr);
-        await message.sendReply("_Failed to send media!_");
+        await message.client.sendMessage(
+          message.jid,
+          isVideo ? { video: mediaBuffer, caption: "*Downloaded by WETFLAX*" } : { image: mediaBuffer, caption: "*Downloaded by WETFLAX*" },
+          { quoted: message.data }
+        );
       }
     } 
     // 2. SEARCH QUERY
     else {
-      let desiredCount = parseInt(userQuery.split(",")[1]) || 5;
-      let searchQuery = userQuery.split(",")[0] || userQuery;
-      let searchResults;
-      try {
-        const res = await pinterestSearch(searchQuery, desiredCount);
-        if (!res || !res.status || !Array.isArray(res.result)) {
-          return await message.sendReply("_No results found for this query_");
-        }
-        searchResults = res.result;
-      } catch (err) {
-        console.error("pinterestSearch error:", err?.message || err);
-        return await message.sendReply(
-          "_Server error while searching Pinterest_"
-        );
-      }
-
-      const toDownload = Math.min(desiredCount, searchResults.length);
-      await message.sendReply(
-        `_Downloading ${toDownload} results for ${searchQuery} from Pinterest_`
-      );
-
-      const imagesToSend = searchResults
-        .slice(0, toDownload)
-        .map((url) => ({ image: url }));
-      imagesToSend[0].caption = `_Pinterest results for ${searchQuery}_`;
-      try {
-        await message.client.albumMessage(
-          message.jid,
-          imagesToSend,
-          message.data
-        );
-      } catch (error) {
-        console.log(
-          "Album send failed, falling back to individual sends:",
-          error
-        );
-        for (const url of searchResults) {
-          try {
-            await message.sendMessage({ url }, "image");
-          } catch (error) {
-            console.error(
-              "Error downloading pinterest item:",
-              error?.message || error
-            );
-          }
-        }
-      }
-    }
-  }
-);
-
-    if (/\bhttps?:\/\/\S+/gi.test(userQuery)) {
-      userQuery = userQuery.match(/\bhttps?:\/\/\S+/gi)[0];
-      const quotedMessage = message.reply_message ? message.quoted : message.data;
-      await message.sendReply("*_Downloading media..._*");
-
-      const fs = require("fs");
-      const { exec } = require("child_process");
-
-      let mediaUrl = null;
-
-      // 1. പ്രാഥമികമായി ബോട്ടിന്റെ ഒറിജിനൽ ഹൈ-ക്വാളിറ്റി ലിങ്ക് എടുക്കുന്നു
-      try {
-        const res = await pinterestDl(userQuery);
-        if (res && res.result) mediaUrl = res.result;
-      } catch (e) {}
-
-      // 2. ലഭിച്ചില്ലെങ്കിൽ ബാക്ക്-അപ്പ് API
-      if (!mediaUrl) {
-        try {
-          const apiRes = await axios.get(`https://api.siputzx.my.id/api/d/pinterest?url=${encodeURIComponent(userQuery)}`, { timeout: 15000 });
-          mediaUrl = apiRes.data?.data?.video_url || apiRes.data?.data?.image_url || apiRes.data?.data?.url;
-        } catch (e) {}
-      }
-
-      if (!mediaUrl) {
-        return await message.sendReply("_Failed to find media link!_");
-      }
-
-      const isVideo = mediaUrl.includes(".mp4") || mediaUrl.includes("/videos/");
-      const tempPath = `/tmp/pin_${Date.now()}.${isVideo ? "mp4" : "jpg"}`;
-
-      // 3. 403 Forbidden ബ്ലോക്ക് മറികടക്കാൻ ലിനക്സ് curl വഴി ഒറിജിനൽ ക്വാളിറ്റിയിൽ ഡൗൺലോഡ് ചെയ്യുന്നു
-      const curlCmd = `curl -s -L -k -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" "${mediaUrl}" -o "${tempPath}"`;
-
-      exec(curlCmd, { timeout: 60000 }, async (curlErr) => {
-        if (!curlErr && fs.existsSync(tempPath) && fs.statSync(tempPath).size > 1000) {
-          try {
-            await message.sendMessage(
-              fs.readFileSync(tempPath),
-              isVideo ? "video" : "image",
-              {
-                quoted: quotedMessage,
-                caption: "*Downloaded by WETFLAX*",
-                mimetype: isVideo ? "video/mp4" : "image/jpeg"
-              }
-            );
-          } catch (sendError) {
-            console.error("Pinterest send error:", sendError);
-            await message.sendReply("_Failed to send media!_");
-          } finally {
-            if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-          }
-        } else {
-          if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-          return await message.sendReply("_Failed to download media!_");
-        }
-      });
-    }
- else {
       let desiredCount = parseInt(userQuery.split(",")[1]) || 5;
       let searchQuery = userQuery.split(",")[0] || userQuery;
       let searchResults;
