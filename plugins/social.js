@@ -345,71 +345,71 @@ Module(
 
     if (/\bhttps?:\/\/\S+/gi.test(userQuery)) {
       userQuery = userQuery.match(/\bhttps?:\/\/\S+/gi)[0];
-      let pinterestResult;
-      try {
-        pinterestResult = await pinterestDl(userQuery);
-      } catch (err) {
-        console.error("pinterestDl error:", err?.message || err);
-      }
-
-      let url = pinterestResult && pinterestResult.result ? pinterestResult.result : null;
-
-      if (!url) {
-        try {
-          const fb = await axios.get(`https://api.siputzx.my.id/api/d/pinterest?url=${encodeURIComponent(userQuery)}`, { timeout: 15000 });
-          url = fb.data?.data?.video_url || fb.data?.data?.image_url || fb.data?.data?.url;
-        } catch (e) {}
-      }
-
-      if (!url) {
-        return await message.sendReply("_No downloadable media found for this link_");
-      }
-
-      const quotedMessage = message.reply_message
-        ? message.quoted
-        : message.data;
-
+      const quotedMessage = message.reply_message ? message.quoted : message.data;
       await message.sendReply("*_Downloading media..._*");
 
       const fs = require("fs");
       const { exec } = require("child_process");
-      const isVideo = url.includes(".mp4") || url.includes("video");
-      const tempPath = `/tmp/pin_${Date.now()}.${isVideo ? "mp4" : "jpg"}`;
+      const tempVideo = `/tmp/pin_${Date.now()}.mp4`;
 
-      // curl ഉപയോഗിച്ച് ഡൗൺലോഡ് ചെയ്യുന്നത് വഴി 403 Forbidden തടയുന്നു
-      const curlCmd = `curl -sL -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" -H "Accept: */*" "${url}" -o "${tempPath}"`;
+      // 1. yt-dlp ഉപയോഗിച്ച് Pinterest ഫയർവാൾ മറികടന്ന് ഒറിജിനൽ ഹൈ ക്വാളിറ്റിയിൽ ഡൗൺലോഡ് ചെയ്യുന്നു
+      const ytDlpCmd = `yt-dlp -f "best[ext=mp4]/best" --no-warnings -o "${tempVideo}" "${userQuery}"`;
 
-      try {
-        await new Promise((resolve, reject) => {
-          exec(curlCmd, { timeout: 60000 }, (error) => {
-            if (error) return reject(error);
-            if (fs.existsSync(tempPath) && fs.statSync(tempPath).size > 1000) {
-              return resolve();
-            }
-            reject(new Error("File empty or blocked"));
-          });
-        });
-
-        await message.sendMessage(
-          fs.readFileSync(tempPath),
-          isVideo ? "video" : "image",
-          {
-            quoted: quotedMessage,
-            caption: "*Downloaded by WETFLAX*",
-            mimetype: isVideo ? "video/mp4" : "image/jpeg"
+      exec(ytDlpCmd, { timeout: 90000 }, async (ytErr) => {
+        if (!ytErr && fs.existsSync(tempVideo) && fs.statSync(tempVideo).size > 1000) {
+          try {
+            await message.sendMessage(
+              fs.readFileSync(tempVideo),
+              "video",
+              {
+                quoted: quotedMessage,
+                caption: "*Downloaded by WETFLAX*",
+                mimetype: "video/mp4"
+              }
+            );
+            fs.unlinkSync(tempVideo);
+            return;
+          } catch (sendErr) {
+            console.error("Pinterest send error:", sendErr);
           }
-        );
+        }
 
+        // 2. ഫോട്ടോകൾ ആണെങ്കിലോ yt-dlp സപ്പോർട്ട് ചെയ്യാത്തതാണെങ്കിലോ ബാക്ക്-അപ്പ് API വഴി അയക്കുന്നു
         try {
-          if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-        } catch (e) {}
-      } catch (streamErr) {
-        console.error("Pinterest curl error:", streamErr.message);
-        try {
-          if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-        } catch (e) {}
-        return await message.sendReply("_Failed to download media!_");
-      }
+          if (fs.existsSync(tempVideo)) fs.unlinkSync(tempVideo);
+
+          let pinterestResult;
+          try {
+            pinterestResult = await pinterestDl(userQuery);
+          } catch (e) {}
+
+          let mediaUrl = pinterestResult?.result;
+          if (!mediaUrl) {
+            const apiRes = await axios.get(`https://api.siputzx.my.id/api/d/pinterest?url=${encodeURIComponent(userQuery)}`, { timeout: 15000 });
+            mediaUrl = apiRes.data?.data?.video_url || apiRes.data?.data?.image_url || apiRes.data?.data?.url;
+          }
+
+          if (!mediaUrl) {
+            return await message.sendReply("_Failed to download media!_");
+          }
+
+          const isVideo = mediaUrl.includes(".mp4");
+          const dlRes = await axios.get(mediaUrl, { responseType: "arraybuffer", timeout: 30000 });
+
+          await message.sendMessage(
+            Buffer.from(dlRes.data),
+            isVideo ? "video" : "image",
+            {
+              quoted: quotedMessage,
+              caption: "*Downloaded by WETFLAX*",
+              mimetype: isVideo ? "video/mp4" : "image/jpeg"
+            }
+          );
+        } catch (fbErr) {
+          console.error("Pinterest fallback error:", fbErr.message);
+          return await message.sendReply("_Failed to download media!_");
+        }
+      });
     }
  else {
       let desiredCount = parseInt(userQuery.split(",")[1]) || 5;
