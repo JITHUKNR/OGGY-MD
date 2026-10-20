@@ -53,7 +53,6 @@ Module(
     let results = await gis(splitInput[0], count + buffer);
     if (results.length < 1) return await message.send("*_No results found!_*");
 
-    // buffer and send with success tracking since many URLs have access issues
     let successCount = 0;
     let i = 0;
     const imagesToSend = [];
@@ -106,6 +105,58 @@ Module(
   }
 );
 
+// High Quality Custom Sticker Converter function
+const toHDSticker = (inputPath, isVideo = false) => {
+  return new Promise((resolve, reject) => {
+    const tempDir = "/tmp/raganork";
+    if (!fs.existsSync(tempDir)) {
+      try {
+        fs.mkdirSync(tempDir, { recursive: true });
+      } catch (e) {}
+    }
+    const outputPath = getTempPath(`hd_stk_${Date.now()}.webp`);
+    let command = ffmpeg(inputPath).outputOptions(["-y"]);
+
+    if (isVideo) {
+      command
+        .videoFilters([
+          "scale=512:512:flags=lanczos:force_original_aspect_ratio=decrease",
+          "pad=512:512:(ow-iw)/2:(oh-ih)/2:color=black@0",
+          "fps=15"
+        ])
+        .outputOptions([
+          "-vcodec", "libwebp",
+          "-pix_fmt", "yuva420p",
+          "-lossless", "0",
+          "-compression_level", "6",
+          "-q:v", "90",
+          "-loop", "0",
+          "-preset", "picture",
+          "-an",
+          "-vsync", "0"
+        ]);
+    } else {
+      command
+        .videoFilters([
+          "scale=512:512:flags=lanczos:force_original_aspect_ratio=decrease",
+          "pad=512:512:(ow-iw)/2:(oh-ih)/2:color=black@0"
+        ])
+        .outputOptions([
+          "-vcodec", "libwebp",
+          "-pix_fmt", "yuva420p",
+          "-lossless", "1",
+          "-qscale", "100",
+          "-preset", "drawing"
+        ]);
+    }
+
+    command
+      .save(outputPath)
+      .on("end", () => resolve(outputPath))
+      .on("error", (err) => reject(err));
+  });
+};
+
 Module(
   {
     pattern: "sticker ?(.*)",
@@ -113,74 +164,156 @@ Module(
     desc: Lang.STICKER_DESC,
   },
   async (message, match) => {
+    let pack = (STICKER_DATA && STICKER_DATA.includes(";")) ? STICKER_DATA.split(";")[0] : message.senderName;
+    let author = (STICKER_DATA && STICKER_DATA.includes(";")) ? STICKER_DATA.split(";")[1] : "";
+
     if (match[1] && match[1].trim() !== "") {
-      var result = await attp(match[1].trim());
-      var exif = {
-        author: STICKER_DATA.split(";")[1] || "",
-        packname: message.senderName,
-        categories: STICKER_DATA.split(";")[2] || "😂",
-        android: "https://github.com/souravkl11/Raganork-md/",
-        ios: "https://github.com/souravkl11/Raganork-md/",
-      };
-      return await message.sendMessage(
-        fs.readFileSync(await addExif(result, exif)),
-        "sticker"
-      );
+      let customText = match[1].trim();
+      if (customText.includes(";")) {
+        let parts = customText.split(";");
+        pack = parts[0].trim();
+        author = parts[1].trim();
+      } else {
+        pack = customText;
+        author = "";
+      }
     }
 
-    if (message.reply_message === false)
-      return await message.send(Lang.STICKER_NEED_REPLY);
-
     var exif = {
-      author: STICKER_DATA.split(";")[1] || "",
-      packname: message.senderName,
-      categories: STICKER_DATA.split(";")[2] || "😂",
+      author: author,
+      packname: pack,
+      categories: (STICKER_DATA && STICKER_DATA.split(";")[2]) || "😂",
       android: "https://github.com/souravkl11/Raganork-md/",
       ios: "https://github.com/souravkl11/Raganork-md/",
     };
 
-    // handle album
-    if (message.reply_message.album) {
-      const albumData = await message.reply_message.download();
+    const hasDirectMedia = !!(
+      message.image ||
+      message.video ||
+      (message.data && message.data.message && (message.data.message.imageMessage || message.data.message.videoMessage))
+    );
+
+    const targetMedia = hasDirectMedia ? message : (message.reply_message ? message.reply_message : null);
+
+    if (!targetMedia) {
+      if (match[1] && match[1].trim() !== "") {
+        var result = await attp(match[1].trim());
+        return await message.sendMessage(
+          fs.readFileSync(await addExif(result, exif)),
+          "sticker"
+        );
+      }
+      return await message.send(Lang.STICKER_NEED_REPLY);
+    }
+
+    if (targetMedia.album) {
+      const albumData = await targetMedia.download();
       const allFiles = [...(albumData.images || []), ...(albumData.videos || [])];
       if (allFiles.length === 0) return await message.send("_No media in album_");
 
-      await message.send(`_Converting ${allFiles.length} stickers..._`);
+      await message.send(`_Converting ${allFiles.length} HD stickers..._`);
       for (const file of allFiles) {
         try {
           const isVideo = albumData.videos?.includes(file);
-          const stickerFile = fs.readFileSync(
-            await addExif(
-              await sticker(file, isVideo ? "video" : "image"),
-              exif
-            )
-          );
+          const converted = await toHDSticker(file, isVideo);
+          const stickerFile = fs.readFileSync(await addExif(converted, exif));
           await message.sendMessage(stickerFile, "sticker", {
-            quoted: message.quoted,
+            quoted: message.quoted || message.data,
           });
+          if (fs.existsSync(converted)) fs.unlinkSync(converted);
         } catch (err) {
-          console.error("Failed to convert album sticker:", err);
+          console.error("Album conversion error:", err);
         }
       }
       return;
     }
 
-    var savedFile = await message.reply_message.download();
-    if (message.reply_message.image === true) {
-      return await message.sendMessage(
-        fs.readFileSync(await addExif(await sticker(savedFile), exif)),
-        "sticker",
-        { quoted: message.quoted }
-      );
-    } else {
-      return await message.sendMessage(
-        fs.readFileSync(await addExif(await sticker(savedFile, "video"), exif)),
-        "sticker",
-        { quoted: message.quoted }
-      );
+    const tempDir = "/tmp/raganork";
+    if (!fs.existsSync(tempDir)) {
+      try {
+        fs.mkdirSync(tempDir, { recursive: true });
+      } catch (e) {}
     }
+
+    let isVideo = !!(
+      targetMedia.video ||
+      (targetMedia.mimetype && targetMedia.mimetype.includes("video")) ||
+      (targetMedia.data && targetMedia.data.message && targetMedia.data.message.videoMessage)
+    );
+
+    var savedFile = await targetMedia.download();
+    if (!savedFile) return await message.send("_Failed to download media!_");
+
+    let fileToConvert = savedFile;
+    let trimmedFile = null;
+
+    if (isVideo) {
+      try {
+        trimmedFile = getTempPath(`trim_${Date.now()}.mp4`);
+        await new Promise((resolve, reject) => {
+          ffmpeg(savedFile)
+            .setStartTime(0)
+            .setDuration(6)
+            .outputOptions([
+              "-y",
+              "-c:v copy",
+              "-c:a copy"
+            ])
+            .save(trimmedFile)
+            .on("end", resolve)
+            .on("error", () => {
+              ffmpeg(savedFile)
+                .setStartTime(0)
+                .setDuration(6)
+                .outputOptions(["-y", "-crf 18", "-preset slow"])
+                .save(trimmedFile)
+                .on("end", resolve)
+                .on("error", reject);
+            });
+        });
+        fileToConvert = trimmedFile;
+      } catch (trimErr) {
+        console.error("Trimming failed, proceeding with original:", trimErr);
+        fileToConvert = savedFile;
+      }
+    }
+
+    let converted = null;
+    let exifFile = null;
+
+    try {
+      converted = await toHDSticker(fileToConvert, isVideo);
+      exifFile = await addExif(converted, exif);
+
+      await message.sendMessage(
+        fs.readFileSync(exifFile),
+        "sticker",
+        { quoted: message.quoted || message.data }
+      );
+    } catch (err) {
+      console.error("HD Sticker generation failed:", err);
+      try {
+        converted = await sticker(fileToConvert, isVideo ? "video" : "image");
+        exifFile = await addExif(converted, exif);
+        await message.sendMessage(
+          fs.readFileSync(exifFile),
+          "sticker",
+          { quoted: message.quoted || message.data }
+        );
+      } catch (fbErr) {
+        return await message.send("_Failed to generate sticker!_");
+      }
+    }
+
+    try {
+      if (fs.existsSync(savedFile)) fs.unlinkSync(savedFile);
+      if (trimmedFile && fs.existsSync(trimmedFile)) fs.unlinkSync(trimmedFile);
+      if (converted && fs.existsSync(converted)) fs.unlinkSync(converted);
+      if (exifFile && fs.existsSync(exifFile)) fs.unlinkSync(exifFile);
+    } catch (e) {}
   }
 );
+
 Module(
   {
     pattern: "mp3 ?(.*)",
@@ -197,7 +330,6 @@ Module(
     )
       return await message.sendReply(Lang.MP3_NEED_REPLY);
 
-    // handle album
     if (message.reply_message.album) {
       const albumData = await message.reply_message.download();
       const videoFiles = albumData.videos || [];
@@ -260,6 +392,7 @@ Module(
       .run();
   }
 );
+
 Module(
   {
     pattern: "slow",
@@ -270,7 +403,6 @@ Module(
     if (message.reply_message === false)
       return await message.sendReply(Lang.MP3_NEED_REPLY);
 
-    // handle album
     if (message.reply_message.album) {
       const albumData = await message.reply_message.download();
       const videoFiles = albumData.videos || [];
@@ -326,6 +458,7 @@ Module(
       });
   }
 );
+
 Module(
   {
     pattern: "sped ?(.*)",
@@ -336,7 +469,6 @@ Module(
     if (message.reply_message === false)
       return await message.sendReply(Lang.MP3_NEED_REPLY);
 
-    // handle album
     if (message.reply_message.album) {
       const albumData = await message.reply_message.download();
       const videoFiles = albumData.videos || [];
@@ -392,6 +524,7 @@ Module(
       });
   }
 );
+
 Module(
   {
     pattern: "bass ?(.*)",
@@ -402,7 +535,6 @@ Module(
     if (message.reply_message === false)
       return await message.sendReply(Lang.BASS_NEED_REPLY);
 
-    // handle album
     if (message.reply_message.album) {
       const albumData = await message.reply_message.download();
       const videoFiles = albumData.videos || [];
@@ -430,6 +562,7 @@ Module(
     });
   }
 );
+
 Module(
   {
     pattern: "photo ?(.*)",
@@ -448,6 +581,7 @@ Module(
       });
   }
 );
+
 Module(
   {
     pattern: "attp ?(.*)",
@@ -458,9 +592,9 @@ Module(
     if (match[1] == "") return await message.send("*Need text*");
     var result = await attp(match[1]);
     var exif = {
-      author: STICKER_DATA.split(";")[1] || "",
+      author: (STICKER_DATA && STICKER_DATA.split(";")[1]) || "",
       packname: message.senderName,
-      categories: STICKER_DATA.split(";")[2] || "😂",
+      categories: (STICKER_DATA && STICKER_DATA.split(";")[2]) || "😂",
       android: "https://github.com/souravkl11/Raganork-md/",
       ios: "https://github.com/souravkl11/Raganork-md/",
     };
@@ -470,6 +604,7 @@ Module(
     );
   }
 );
+
 Module(
   {
     pattern: "tts ?(.*)",
@@ -542,6 +677,7 @@ Module(
     });
   }
 );
+
 Module(
   {
     pattern: "doc ?(.*)",
@@ -567,7 +703,6 @@ Module(
       );
     }
 
-    // handle album
     if (message.reply_message.album) {
       const albumData = await message.reply_message.download();
       const allFiles = [...(albumData.images || []), ...(albumData.videos || [])];
@@ -663,6 +798,7 @@ Module(
     }
   }
 );
+
 Module(
   {
     pattern: "upload ?(.*)",
@@ -745,6 +881,7 @@ Module(
     }
   }
 );
+
 Module(
   {
     pattern: "square ?(.*)",
@@ -964,6 +1101,7 @@ Module(
     }
   }
 );
+
 Module(
   {
     pattern: "compress ?(.*)",
