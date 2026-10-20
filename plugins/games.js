@@ -128,31 +128,85 @@ const dares = [
   "നിങ്ങളുടെ വാട്സാപ്പ് സ്റ്റാറ്റസിൽ 'ഞാൻ ഇന്ന് കട്ട സിംഗിളാണ്' എന്ന് പോസ്റ്റ് ചെയ്യുക!"
 ];
 
-// Pollinations AI ഫംഗ്ഷൻ (ക്വിസിനായി)
+// ചോദിച്ച ചോദ്യങ്ങൾ ഓർത്തു വെക്കാനുള്ള ലിസ്റ്റ് (ആവർത്തനം ഒഴിവാക്കാൻ)
+const recentQuestions = [];
+
+// ലോകത്തിലെ സകല വിഷയങ്ങളുടെയും വിപുലമായ ലിസ്റ്റ്
+const globalQuizTopics = [
+  "World Football, Messi, Ronaldo, Champions League and World Cup",
+  "Cricket Legends, IPL, T20 World Cup, Dhoni, Kohli and Records",
+  "Malayalam Cinema Hits, Mohanlal, Mammootty and Evergreen Dialogues",
+  "World Cinema, Oscars, Christopher Nolan and Hollywood Classics",
+  "Anime, Naruto, One Piece, Dragon Ball Z and Pop Culture",
+  "Space, Planets, Black Holes, ISRO Chandrayaan and NASA",
+  "Science, Physics, Chemistry, Human Body and Biology",
+  "World History, Empires, World War II and Ancient Wonders",
+  "World Geography, Countries, Capitals, Oceans and Mountains",
+  "Smartphones, AI, Gaming, Computers and Inventions",
+  "Wildlife, Animals, Deep Ocean Creatures and Nature",
+  "Marvel, Avengers, DC, Batman and Comic Superheroes",
+  "Kerala History, Traditional Arts, Festivals and General Knowledge"
+];
+
+// വിപുലീകരിച്ച ബാക്ക്-അപ്പ് ശേഖരം
+const richBackupPool = [
+  { q: "കേരളത്തിലെ ആദ്യത്തെ മുഖ്യമന്ത്രി ആരാണ്?", options: ["A) ഇ.എം.എസ്", "B) പട്ടം താണുപിള്ള", "C) സി. അച്യുതമേനോൻ", "D) ആർ. ശങ്കർ"], a: "A", cat: "കേരള ചരിത്രം" },
+  { q: "സൗരയൂഥത്തിലെ ഏറ്റവും വലിയ ഗ്രഹം ഏതാണ്?", options: ["A) ചൊവ്വ", "B) വ്യാഴം", "C) ശനി", "D) ശുക്രൻ"], a: "B", cat: "ശാസ്ത്രം" },
+  { q: "ലോകകപ്പ് ഫുട്ബോൾ ചരിത്രത്തിൽ ഏറ്റവും കൂടുതൽ തവണ കിരീടം നേടിയ രാജ്യം?", options: ["A) അർജന്റീന", "B) ഫ്രാൻസ്", "C) ബ്രസീൽ", "D) ജർമ്മനി"], a: "C", cat: "സ്പോർട്സ്" },
+  { q: "'മണിച്ചിത്രത്താഴ്' സിനിമയിലെ നാഗവല്ലിക്ക് ശബ്ദം നൽകിയത് ആര്?", options: ["A) ശോഭന", "B) ഭാഗ്യലക്ഷ്മി", "C) ദുർഗ്ഗ", "D) ആനന്ദവല്ലി"], a: "B", cat: "സിനിമ" },
+  { q: "മനുഷ്യശരീരത്തിലെ ഏറ്റവും വലിയ ആന്തരിക അവയവം ഏതാണ്?", options: ["A) ഹൃദയം", "B) കരൾ", "C) വൃക്ക", "D) ശ്വാസകോശം"], a: "B", cat: "ശാസ്ത്രം" },
+  { q: "ക്രിക്കറ്റ് ലോകകപ്പ് 2011-ൽ ഇന്ത്യക്ക് നേടിക്കൊടുത്ത ക്യാപ്റ്റൻ ആര്?", options: ["A) സച്ചിൻ", "B) എം.എസ്. ധോണി", "C) വിരാട് കോലി", "D) സൗരവ് ഗാംഗുലി"], a: "B", cat: "സ്പോർട്സ്" },
+  { q: "ലോകത്തിലെ ഏറ്റവും ഉയരം കൂടിയ കൊടുമുടി ഏതാണ്?", options: ["A) കെ2", "B) എവറസ്റ്റ്", "C) കാഞ്ചൻജംഗ", "D) ആനമുടി"], a: "B", cat: "ഭൂമിശാസ്ത്രം" },
+  { q: "'അവഞ്ചേഴ്സ്' സിനിമകളിൽ അയൺമാൻ കഥാപാത്രത്തെ അവതരിപ്പിച്ച നടൻ ആര്?", options: ["A) ക്രിസ് ഇവാൻ", "B) റോബർട്ട് ഡൗണി ജൂനിയർ", "C) ക്രിസ് ഹെംസ്‌വർത്ത്", "D) ടോം ഹോളണ്ട്"], a: "B", cat: "ഹോളിവുഡ്" },
+  { q: "ഇന്ത്യയുടെ ആദ്യത്തെ കൃത്രിമോപഗ്രഹം ഏതാണ്?", options: ["A) ഭാസ്കര", "B) ആര്യഭട്ട", "C) രോഹിണി", "D) ഇൻസാറ്റ്"], a: "B", cat: "ശാസ്ത്രം" },
+  { q: "കേരളത്തിലെ ഏറ്റവും നീളം കൂടിയ നദി ഏതാണ്?", options: ["A) ഭാരതപ്പുഴ", "B) പെരിയാർ", "C) പമ്പ", "D) ചാലിയാർ"], a: "B", cat: "ഭൂമിശാസ്ത്രം" }
+];
+
+// Pollinations AI ഫംഗ്ഷൻ (ചോദിച്ച ചോദ്യങ്ങൾ ആവർത്തിക്കാത്ത സ്മാർട്ട് ജനറേറ്റർ)
 async function getSmartQuizQuestion() {
-  const randomCategory = categories[Math.floor(Math.random() * categories.length)];
-  const prompt = `Generate 1 unique, fun trivia question in Malayalam language about ${randomCategory}. Provide 4 multiple choice options in Malayalam labeled A, B, C, D and provide the correct option letter. Format response strictly as JSON with keys: "q" (the question string in Malayalam), "options" (array of 4 Malayalam strings like ["A) ...", "B) ...", "C) ...", "D) ..."]), "a" (single correct option letter: "A", "B", "C", or "D"), and "cat" (category name in Malayalam). Do not output markdown, provide pure JSON only.`;
+  const randomCategory = globalQuizTopics[Math.floor(Math.random() * globalQuizTopics.length)];
+  const randomSeed = `${Date.now()}_${Math.floor(Math.random() * 999999)}`;
+  const prompt = `You are a trivia master. Generate 1 brand-new, never-before-seen trivia question in Malayalam language about "${randomCategory}". Provide 4 multiple-choice options in Malayalam labeled A, B, C, D and provide the correct option letter. Format response strictly as JSON with keys: "q" (question string in Malayalam), "options" (array of 4 Malayalam strings like ["A) ...", "B) ...", "C) ...", "D) ..."]), "a" (single uppercase letter "A", "B", "C", or "D"), and "cat" (category name in Malayalam). Do not output markdown. Pure JSON only.`;
 
   try {
-    const res = await axios.get(`https://text.pollinations.ai/${encodeURIComponent(prompt)}?model=openai&json=true`, {
-      timeout: 10000
-    });
+    const res = await axios.get(
+      `https://text.pollinations.ai/${encodeURIComponent(prompt)}?seed=${randomSeed}&model=openai&json=true`,
+      { timeout: 12000 }
+    );
+
     let raw = res.data;
     if (typeof raw === "string") {
       raw = raw.replace(/```json/gi, "").replace(/```/gi, "").trim();
       raw = JSON.parse(raw);
     }
+
     if (raw && raw.q && Array.isArray(raw.options) && raw.options.length === 4 && raw.a) {
-      return {
-        q: raw.q,
-        options: raw.options,
-        a: raw.a.trim().toUpperCase()[0],
-        cat: raw.cat || randomCategory
-      };
+      const qText = raw.q.trim();
+      // അടുത്തിടെ ചോദിച്ചതല്ലെങ്കിൽ മാത്രം നൽകുന്നു
+      if (!recentQuestions.includes(qText)) {
+        recentQuestions.push(qText);
+        if (recentQuestions.length > 50) recentQuestions.shift(); // 50 ചോദ്യങ്ങൾ കഴിഞ്ഞാൽ മാത്രമേ വീണ്ടും വരാൻ സാധ്യതയുള്ളൂ
+
+        return {
+          q: qText,
+          options: raw.options,
+          a: raw.a.trim().toUpperCase()[0],
+          cat: raw.cat || randomCategory
+        };
+      }
     }
   } catch (e) {}
 
-  return backupQuizList[Math.floor(Math.random() * backupQuizList.length)];
+  // AI പരാജയപ്പെട്ടാൽ അടുത്തിടെ വരാത്ത ബാക്ക്-അപ്പ് ചോദ്യം നൽകുന്നു
+  const unusedBackups = richBackupPool.filter((item) => !recentQuestions.includes(item.q));
+  const fallback = unusedBackups.length > 0
+    ? unusedBackups[Math.floor(Math.random() * unusedBackups.length)]
+    : richBackupPool[Math.floor(Math.random() * richBackupPool.length)];
+
+  recentQuestions.push(fallback.q);
+  if (recentQuestions.length > 50) recentQuestions.shift();
+
+  return fallback;
 }
 
 // ------------------- ഗെയിംസ് ഹെൽപ്പ് മെനു (.games) -------------------
