@@ -121,15 +121,15 @@ const toHDSticker = (inputPath, isVideo = false) => {
       command
         .videoFilters([
           "scale=512:512:flags=lanczos:force_original_aspect_ratio=decrease",
-          "pad=512:512:(ow-iw)/2:(oh-ih)/2:color=black@0",
+          "format=rgba",
+          "pad=512:512:(ow-iw)/2:(oh-ih)/2:color=#00000000",
           "fps=15"
         ])
         .outputOptions([
           "-vcodec", "libwebp",
-          "-pix_fmt", "yuva420p",
           "-lossless", "0",
           "-compression_level", "6",
-          "-q:v", "90",
+          "-q:v", "70",
           "-loop", "0",
           "-preset", "picture",
           "-an",
@@ -139,11 +139,11 @@ const toHDSticker = (inputPath, isVideo = false) => {
       command
         .videoFilters([
           "scale=512:512:flags=lanczos:force_original_aspect_ratio=decrease",
-          "pad=512:512:(ow-iw)/2:(oh-ih)/2:color=black@0"
+          "format=rgba",
+          "pad=512:512:(ow-iw)/2:(oh-ih)/2:color=#00000000"
         ])
         .outputOptions([
           "-vcodec", "libwebp",
-          "-pix_fmt", "yuva420p",
           "-lossless", "1",
           "-qscale", "100",
           "-preset", "drawing"
