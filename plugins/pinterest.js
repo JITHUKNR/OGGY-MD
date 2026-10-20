@@ -4,30 +4,57 @@ const botConfig = require("../config");
 const axios = require("axios");
 const isFromMe = botConfig.MODE === "public" ? false : true;
 
-// 1. ഫോട്ടോകളുടെ ക്വാളിറ്റി ഒട്ടും കുറയാതെ ഒറിജിനൽ റെസല്യൂഷൻ (Full HD / 4K) ആക്കാൻ
-function getHdImageUrl(url) {
-  if (!url || typeof url !== "string") return url;
-  return url.replace(/\/(236x|474x|564x|736x)\//gi, "/originals/");
+// 1. Pinterest short link (pin.it) expand ചെയ്യൽ
+async function expandPinUrl(shortUrl) {
+  try {
+    const res = await axios.get(shortUrl, {
+      maxRedirects: 10,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+      },
+      timeout: 12000
+    });
+    return res.request?.res?.responseUrl || shortUrl;
+  } catch (e) {
+    return shortUrl;
+  }
 }
 
-// 2. ഇമേജുകൾ 403 Forbidden ഇല്ലാതെ ഒറിജിനൽ ക്വാളിറ്റിയിൽ ഡൗൺലോഡ് ചെയ്യാൻ
+// 2. ഇമേജ് ബഫർ എടുക്കൽ (404 / 403 എററുകൾ പൂർണ്ണമായി തടയുന്നു)
 async function fetchImageBuffer(url) {
-  const hdUrl = getHdImageUrl(url);
-  // Method A: Cloudflare Weserv Proxy (100% safe from 403 block)
+  // A. ഒറിജിനൽ ഹൈ-റെസ് (/originals/) ലിങ്ക് ഉണ്ടെങ്കിൽ അത് വഴി നോക്കുന്നു
+  const hdUrl = url.replace(/\/(236x|474x|564x|736x)\//gi, "/originals/");
+  if (hdUrl !== url) {
+    try {
+      const res = await axios.get(`https://wsrv.nl/?url=${encodeURIComponent(hdUrl)}&output=jpg&q=100`, {
+        responseType: "arraybuffer",
+        timeout: 12000
+      });
+      if (res.data && res.data.length > 500) {
+        return Buffer.from(res.data);
+      }
+    } catch (e) {}
+  }
+
+  // B. ഒറിജിനൽ ഫോട്ടോ wsrv പ്രോക്സി വഴി (100% working, Pinterest ബ്ലോക്ക് ചെയ്യില്ല)
   try {
-    const proxyUrl = `https://wsrv.nl/?url=${encodeURIComponent(hdUrl)}&output=jpg&q=100`;
-    const res = await axios.get(proxyUrl, { responseType: "arraybuffer", timeout: 25000 });
+    const res = await axios.get(`https://wsrv.nl/?url=${encodeURIComponent(url)}&output=jpg&q=100`, {
+      responseType: "arraybuffer",
+      timeout: 15000
+    });
     if (res.data && res.data.length > 500) {
       return Buffer.from(res.data);
     }
   } catch (e) {}
 
-  // Method B: Direct Fetch without Referer
+  // C. നേരിട്ടുള്ള axios fetch
   try {
-    const res = await axios.get(hdUrl, {
+    const res = await axios.get(url, {
       responseType: "arraybuffer",
-      headers: { "User-Agent": "okhttp/4.9.2" },
-      timeout: 20000
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+      },
+      timeout: 15000
     });
     if (res.data && res.data.length > 500) {
       return Buffer.from(res.data);
@@ -37,26 +64,28 @@ async function fetchImageBuffer(url) {
   return null;
 }
 
-// 3. വീഡിയോകൾ 403 Forbidden ബ്ലോക്ക് ഇല്ലാതെ ബഫറായി എടുക്കാൻ
+// 3. വീഡിയോ ബഫർ എടുക്കൽ (403 ബൈപ്പാസ്)
 async function fetchVideoBuffer(url) {
-  // Method A: Direct fetch without Referer
+  // Method A: Direct fetch
   try {
     const res = await axios.get(url, {
       responseType: "arraybuffer",
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
       },
-      timeout: 45000
+      timeout: 35000
     });
     if (res.data && res.data.length > 1000) {
       return Buffer.from(res.data);
     }
   } catch (e) {}
 
-  // Method B: Edge Proxy bypass
+  // Method B: CodeTabs Proxy bypass
   try {
-    const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(url)}`;
-    const res = await axios.get(proxyUrl, { responseType: "arraybuffer", timeout: 45000 });
+    const res = await axios.get(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`, {
+      responseType: "arraybuffer",
+      timeout: 40000
+    });
     if (res.data && res.data.length > 1000) {
       return Buffer.from(res.data);
     }
@@ -89,10 +118,9 @@ Module(
 
     // A. LINK DOWNLOAD (Videos & Photos)
     if (/\bhttps?:\/\/\S+/gi.test(input)) {
-      const targetUrl = input.match(/\bhttps?:\/\/\S+/gi)[0];
+      let targetUrl = input.match(/\bhttps?:\/\/\S+/gi)[0];
       const quotedMessage = message.reply_message ? message.quoted : message.data;
 
-      // Animated Progress Bar - Step 1
       const downloadMsg = await message.sendReply(
         `╭━━━〔 ⚡ *OGGY-MD* 〕━━━╮\n` +
         `┃ 📥 *Fetching Pinterest Media...*\n` +
@@ -100,9 +128,14 @@ Module(
         `╰━━━━━━━━━━━━━━━━━━━━━╯`
       );
 
+      // Shortlink expand ചെയ്യൽ
+      if (targetUrl.includes("pin.it")) {
+        targetUrl = await expandPinUrl(targetUrl);
+      }
+
       let mediaUrl = null;
 
-      // 1. ബോട്ടിന്റെ സ്വന്തം pinterestDl വഴി ലിങ്ക് എടുക്കുന്നു
+      // 1. പ്രാഥമികമായി ബോട്ടിന്റെ pinterestDl
       try {
         const pRes = await pinterestDl(targetUrl);
         if (pRes && pRes.result) {
@@ -146,7 +179,6 @@ Module(
 
       const isVideo = mediaUrl.includes(".mp4") || mediaUrl.includes("/videos/");
 
-      // Animated Progress Bar - Step 2
       if (downloadMsg && downloadMsg.key) {
         await message.edit(
           `╭━━━〔 ⚡ *OGGY-MD* 〕━━━╮\n` +
@@ -161,7 +193,26 @@ Module(
       // 3. മീഡിയ ബഫർ ഡൗൺലോഡ് ചെയ്യുന്നു
       let mediaBuffer = isVideo ? await fetchVideoBuffer(mediaUrl) : await fetchImageBuffer(mediaUrl);
 
+      // 4. ബഫർ എടുക്കാൻ പറ്റിയില്ലെങ്കിൽ നേരിട്ട് Baileys വഴി അയക്കുന്നു (Fail-Safe)
       if (!mediaBuffer) {
+        try {
+          const directSendUrl = isVideo ? mediaUrl : `https://wsrv.nl/?url=${encodeURIComponent(mediaUrl)}&output=jpg&q=100`;
+          await message.sendMessage(
+            { url: directSendUrl },
+            isVideo ? "video" : "image",
+            {
+              quoted: quotedMessage,
+              caption: "*Downloaded by WETFLAX*",
+              mimetype: isVideo ? "video/mp4" : "image/jpeg"
+            }
+          );
+          if (downloadMsg && downloadMsg.key) {
+            const sock = message.client || message;
+            await sock.sendMessage(message.jid, { delete: downloadMsg.key }).catch(() => {});
+          }
+          return;
+        } catch (e) {}
+
         if (downloadMsg) {
           await message.edit("_❌ Failed to download high-resolution media!_", message.jid, downloadMsg.key);
         } else {
@@ -170,7 +221,6 @@ Module(
         return;
       }
 
-      // Animated Progress Bar - Step 3 (Completed)
       if (downloadMsg && downloadMsg.key) {
         await message.edit(
           `╭━━━〔 ⚡ *OGGY-MD* 〕━━━╮\n` +
@@ -190,7 +240,6 @@ Module(
         `┃ 🏷️ *Downloaded by WETFLAX*\n` +
         `╰━━━━━━━━━━━━━━━━━━━━━╯`;
 
-      // 4. വാട്സാപ്പിലേക്ക് അയക്കുന്നു
       await message.sendMessage(
         mediaBuffer,
         isVideo ? "video" : "image",
