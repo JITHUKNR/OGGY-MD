@@ -10,7 +10,7 @@ const isFromMe = botConfig.MODE === "public" ? false : true;
 const activeQuiz = {};
 let scores = {};
 
-// പോയിന്റ് സിസ്റ്റം
+// പോയിന്റ് സിസ്റ്റം (ഗ്രൂപ്പ് അടിസ്ഥാനത്തിൽ)
 const SCORE_FILE = path.join(__dirname, "../quiz_scores.json");
 
 function loadScores() {
@@ -24,13 +24,16 @@ function loadScores() {
 }
 loadScores();
 
-function addScore(jid, pts) {
+function addScore(chatJid, userJid, pts) {
   try {
-    scores[jid] = (scores[jid] || 0) + pts;
+    if (typeof scores[chatJid] !== "object" || scores[chatJid] === null) {
+      scores[chatJid] = {};
+    }
+    scores[chatJid][userJid] = (scores[chatJid][userJid] || 0) + pts;
     fs.writeFileSync(SCORE_FILE, JSON.stringify(scores, null, 2));
-    return scores[jid];
+    return scores[chatJid][userJid];
   } catch (e) {
-    return (scores[jid] || 0) + pts;
+    return pts;
   }
 }
 
@@ -112,7 +115,7 @@ async function handleQuizAnswer(message, inputAns) {
     delete activeQuiz[message.jid];
 
     const senderJid = message.sender || message.data?.participant || message.jid;
-    const totalPoints = addScore(senderJid, 10);
+    const totalPoints = addScore(message.jid, senderJid, 10);
     const senderNum = senderJid.split("@")[0];
 
     const winMsg =
@@ -204,7 +207,6 @@ Module(
     const rawText = (message.text || message.message || "").trim();
     const text = rawText.toUpperCase();
 
-    // ചോദ്യത്തിന് റിപ്ലൈ ആയിട്ടാണോ വരുന്നത് എന്ന് ഉറപ്പാക്കുന്നു
     const isReplyToQuiz = message.reply_message && (
       message.reply_message.text?.includes("OGGY-MD QUIZ") ||
       message.reply_message.text?.includes("ചോദ്യം")
@@ -244,20 +246,21 @@ Module(
   }
 );
 
-// 4. ലീഡർബോർഡ്: .leaderboard
+// 4. ഗ്രൂപ്പ് ലീഡർബോർഡ്: .leaderboard
 Module(
   {
     pattern: "leaderboard ?(.*)",
     fromMe: isFromMe,
-    desc: "Shows Quiz Leaderboard",
+    desc: "Shows Group Quiz Leaderboard",
     usage: ".leaderboard",
     use: "game",
   },
   async (message) => {
-    const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const chatScores = (typeof scores[message.jid] === "object" && scores[message.jid] !== null) ? scores[message.jid] : {};
+    const sorted = Object.entries(chatScores).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
     if (!sorted.length) {
-      return await message.sendReply("_ഇതുവരെ ആരും ക്വിസിൽ പോയിന്റ് നേടിയിട്ടില്ല!_");
+      return await message.sendReply("_ഈ ഗ്രൂപ്പിൽ ഇതുവരെ ആരും ക്വിസിൽ പോയിന്റ് നേടിയിട്ടില്ല!_");
     }
 
     const medals = ["🥇", "🥈", "🥉", "🎖️", "🎖️"];
@@ -276,5 +279,71 @@ Module(
       { text, mentions },
       { quoted: message.data }
     );
+  }
+);
+
+// 5. പോയിന്റ് റീസെറ്റ്: .resetquiz (ഗ്രൂപ്പിൽ അഡ്മിൻ/ഓണർ, DM-ൽ ഗ്ലോബൽ)
+Module(
+  {
+    pattern: "resetquiz ?(.*)",
+    fromMe: isFromMe,
+    desc: "Resets quiz scores (Group Admin or Bot Owner)",
+    usage: ".resetquiz",
+    use: "game",
+  },
+  async (message) => {
+    const isGroup = message.jid.endsWith("@g.us");
+    const senderJid = message.sender || message.data?.participant || message.jid;
+    const senderNum = senderJid.split("@")[0];
+
+    // ബോട്ട് ഓണറാണോ എന്ന് നോക്കുന്നു
+    const isOwner = message.fromMe || (botConfig.SUDO && botConfig.SUDO.includes(senderNum));
+
+    // A. ഗ്രൂപ്പിലാണ് കമാൻഡ് അടിക്കുന്നതെങ്കിൽ
+    if (isGroup) {
+      let isAdmin = false;
+      try {
+        const groupMeta = await message.client.groupMetadata(message.jid);
+        const participant = groupMeta.participants.find((p) => p.id === senderJid);
+        if (participant && (participant.admin === "admin" || participant.admin === "superadmin")) {
+          isAdmin = true;
+        }
+      } catch (e) {}
+
+      if (!isAdmin && !isOwner) {
+        return await message.sendReply("_⚠️ ഈ ഗ്രൂപ്പിലെ സ്കോർ റീസെറ്റ് ചെയ്യാൻ ഗ്രൂപ്പ് അഡ്മിൻമാർക്കോ ബോട്ട് ഓണർക്കോ മാത്രമേ അനുവാദമുള്ളൂ!_");
+      }
+
+      // ആ ഗ്രൂപ്പിലെ പോയിന്റുകൾ മാത്രം റീസെറ്റ് ചെയ്യുന്നു
+      delete scores[message.jid];
+      try {
+        fs.writeFileSync(SCORE_FILE, JSON.stringify(scores, null, 2));
+      } catch (e) {}
+
+      return await message.sendReply(
+        `╭━━━〔 🔄 *QUIZ RESET* 〕━━━╮\n` +
+        `┃ ✅ ഈ ഗ്രൂപ്പിലെ മുഴുവൻ അംഗങ്ങളുടെയും\n` +
+        `┃ ക്വിസ് പോയിന്റുകൾ പൂജ്യമായി (0) റീസെറ്റ് ചെയ്തു!\n` +
+        `╰━━━━━━━━━━━━━━━━━━━━━╯`
+      );
+    } 
+    // B. പേഴ്സണൽ ചാറ്റിൽ (DM) ആണ് അടിക്കുന്നതെങ്കിൽ -> ഗ്ലോബൽ റീസെറ്റ്
+    else {
+      if (!isOwner) {
+        return await message.sendReply("_⚠️ എല്ലാ ഗ്രൂപ്പുകളിലെയും സ്കോറുകൾ റീസെറ്റ് ചെയ്യാൻ ബോട്ട് ഓണർക്ക് മാത്രമേ അനുവാദമുള്ളൂ!_");
+      }
+
+      scores = {};
+      try {
+        fs.writeFileSync(SCORE_FILE, JSON.stringify({}, null, 2));
+      } catch (e) {}
+
+      return await message.sendReply(
+        `╭━━━〔 🌐 *GLOBAL QUIZ RESET* 〕━━━╮\n` +
+        `┃ ✅ എല്ലാ ഗ്രൂപ്പുകളിലെയും മുഴുവൻ ക്വിസ്\n` +
+        `┃ സ്കോറുകളും പൂർണ്ണമായി പൂജ്യമായി (0) റീസെറ്റ് ചെയ്തു!\n` +
+        `╰━━━━━━━━━━━━━━━━━━━━━╯`
+      );
+    }
   }
 );
