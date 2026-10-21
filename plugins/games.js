@@ -128,27 +128,46 @@ const dares = [
   "നിങ്ങളുടെ വാട്സാപ്പ് സ്റ്റാറ്റസിൽ 'ഞാൻ ഇന്ന് കട്ട സിംഗിളാണ്' എന്ന് പോസ്റ്റ് ചെയ്യുക!"
 ];
 
-// ചോദിച്ച ചോദ്യങ്ങൾ ഓർത്തു വെക്കാനുള്ള ലിസ്റ്റ് (ആവർത്തനം ഒഴിവാക്കാൻ)
-const recentQuestions = [];
+// ചോദിച്ച ചോദ്യങ്ങൾ സ്ഥിരമായി ഫയലിൽ സൂക്ഷിക്കാൻ (റീസ്റ്റാർട്ട് ആയാലും ആവർത്തിക്കില്ല)
+const HISTORY_FILE = path.join(__dirname, "../quiz_history.json");
+let quizHistory = [];
 
-// ലോകത്തിലെ സകല വിഷയങ്ങളുടെയും വിപുലമായ ലിസ്റ്റ്
+function loadHistory() {
+  try {
+    if (fs.existsSync(HISTORY_FILE)) {
+      quizHistory = JSON.parse(fs.readFileSync(HISTORY_FILE, "utf-8"));
+    }
+  } catch (e) {
+    quizHistory = [];
+  }
+}
+loadHistory();
+
+function recordQuestion(qText) {
+  try {
+    quizHistory.push(qText.trim());
+    if (quizHistory.length > 250) quizHistory.shift(); // 250 ചോദ്യങ്ങൾ വരെ ഓർത്തു വെക്കും
+    fs.writeFileSync(HISTORY_FILE, JSON.stringify(quizHistory, null, 2));
+  } catch (e) {}
+}
+
+// ലോകത്തിലെ സകല വൈവിധ്യമാർന്ന വിഷയങ്ങൾ
 const globalQuizTopics = [
+  "Malayalam Cinema Classic and Modern Hits",
   "World Football, Messi, Ronaldo, Champions League and World Cup",
-  "Cricket Legends, IPL, T20 World Cup, Dhoni, Kohli and Records",
-  "Malayalam Cinema Hits, Mohanlal, Mammootty and Evergreen Dialogues",
-  "World Cinema, Oscars, Christopher Nolan and Hollywood Classics",
-  "Anime, Naruto, One Piece, Dragon Ball Z and Pop Culture",
-  "Space, Planets, Black Holes, ISRO Chandrayaan and NASA",
-  "Science, Physics, Chemistry, Human Body and Biology",
-  "World History, Empires, World War II and Ancient Wonders",
-  "World Geography, Countries, Capitals, Oceans and Mountains",
-  "Smartphones, AI, Gaming, Computers and Inventions",
-  "Wildlife, Animals, Deep Ocean Creatures and Nature",
-  "Marvel, Avengers, DC, Batman and Comic Superheroes",
-  "Kerala History, Traditional Arts, Festivals and General Knowledge"
+  "Cricket Legends, IPL, Records, Dhoni, Rohit and Kohli",
+  "World History, Empires, World War and Ancient Civilization",
+  "Science, Human Anatomy, Physics, Medicine and Discoveries",
+  "Space, NASA, ISRO Chandrayaan, Black Holes and Universe",
+  "World Geography, Countries, Oceans, Mountains and Capitals",
+  "Anime, Naruto, Dragon Ball, One Piece and Pop Culture",
+  "Marvel Cinematic Universe, DC, Comics and Superheroes",
+  "Smartphones, Tech Inventions, AI and Gaming",
+  "Kerala History, Traditional Arts, Festivals and Rivers",
+  "Wildlife, Underwater Ocean Secrets and Nature"
 ];
 
-// വിപുലീകരിച്ച ബാക്ക്-അപ്പ് ശേഖരം
+// ബാക്ക്-അപ്പ് ശേഖരം
 const richBackupPool = [
   { q: "കേരളത്തിലെ ആദ്യത്തെ മുഖ്യമന്ത്രി ആരാണ്?", options: ["A) ഇ.എം.എസ്", "B) പട്ടം താണുപിള്ള", "C) സി. അച്യുതമേനോൻ", "D) ആർ. ശങ്കർ"], a: "A", cat: "കേരള ചരിത്രം" },
   { q: "സൗരയൂഥത്തിലെ ഏറ്റവും വലിയ ഗ്രഹം ഏതാണ്?", options: ["A) ചൊവ്വ", "B) വ്യാഴം", "C) ശനി", "D) ശുക്രൻ"], a: "B", cat: "ശാസ്ത്രം" },
@@ -157,16 +176,15 @@ const richBackupPool = [
   { q: "മനുഷ്യശരീരത്തിലെ ഏറ്റവും വലിയ ആന്തരിക അവയവം ഏതാണ്?", options: ["A) ഹൃദയം", "B) കരൾ", "C) വൃക്ക", "D) ശ്വാസകോശം"], a: "B", cat: "ശാസ്ത്രം" },
   { q: "ക്രിക്കറ്റ് ലോകകപ്പ് 2011-ൽ ഇന്ത്യക്ക് നേടിക്കൊടുത്ത ക്യാപ്റ്റൻ ആര്?", options: ["A) സച്ചിൻ", "B) എം.എസ്. ധോണി", "C) വിരാട് കോലി", "D) സൗരവ് ഗാംഗുലി"], a: "B", cat: "സ്പോർട്സ്" },
   { q: "ലോകത്തിലെ ഏറ്റവും ഉയരം കൂടിയ കൊടുമുടി ഏതാണ്?", options: ["A) കെ2", "B) എവറസ്റ്റ്", "C) കാഞ്ചൻജംഗ", "D) ആനമുടി"], a: "B", cat: "ഭൂമിശാസ്ത്രം" },
-  { q: "'അവഞ്ചേഴ്സ്' സിനിമകളിൽ അയൺമാൻ കഥാപാത്രത്തെ അവതരിപ്പിച്ച നടൻ ആര്?", options: ["A) ക്രിസ് ഇവാൻ", "B) റോബർട്ട് ഡൗണി ജൂനിയർ", "C) ക്രിസ് ഹെംസ്‌വർത്ത്", "D) ടോം ഹോളണ്ട്"], a: "B", cat: "ഹോളിവുഡ്" },
   { q: "ഇന്ത്യയുടെ ആദ്യത്തെ കൃത്രിമോപഗ്രഹം ഏതാണ്?", options: ["A) ഭാസ്കര", "B) ആര്യഭട്ട", "C) രോഹിണി", "D) ഇൻസാറ്റ്"], a: "B", cat: "ശാസ്ത്രം" },
   { q: "കേരളത്തിലെ ഏറ്റവും നീളം കൂടിയ നദി ഏതാണ്?", options: ["A) ഭാരതപ്പുഴ", "B) പെരിയാർ", "C) പമ്പ", "D) ചാലിയാർ"], a: "B", cat: "ഭൂമിശാസ്ത്രം" }
 ];
 
-// Pollinations AI ഫംഗ്ഷൻ (ചോദിച്ച ചോദ്യങ്ങൾ ആവർത്തിക്കാത്ത സ്മാർട്ട് ജനറേറ്റർ)
+// ഒരിക്കലും ആവർത്തിക്കാത്ത സ്മാർട്ട് ചോദ്യം ഉണ്ടാക്കുന്ന ഫംഗ്ഷൻ
 async function getSmartQuizQuestion() {
   const randomCategory = globalQuizTopics[Math.floor(Math.random() * globalQuizTopics.length)];
-  const randomSeed = `${Date.now()}_${Math.floor(Math.random() * 999999)}`;
-  const prompt = `You are a trivia master. Generate 1 brand-new, never-before-seen trivia question in Malayalam language about "${randomCategory}". Provide 4 multiple-choice options in Malayalam labeled A, B, C, D and provide the correct option letter. Format response strictly as JSON with keys: "q" (question string in Malayalam), "options" (array of 4 Malayalam strings like ["A) ...", "B) ...", "C) ...", "D) ..."]), "a" (single uppercase letter "A", "B", "C", or "D"), and "cat" (category name in Malayalam). Do not output markdown. Pure JSON only.`;
+  const randomSeed = `${Date.now()}_${Math.floor(Math.random() * 9999999)}`;
+  const prompt = `You are a trivia master. Create 1 unique, fun trivia question in Malayalam language about "${randomCategory}". Provide 4 multiple-choice options in Malayalam labeled A, B, C, D and provide the single correct option letter. Format strictly as JSON with keys: "q" (question in Malayalam), "options" (array of 4 Malayalam strings like ["A) ...", "B) ...", "C) ...", "D) ..."]), "a" (single uppercase letter "A", "B", "C", or "D"), and "cat" (category in Malayalam). No markdown, pure JSON only.`;
 
   try {
     const res = await axios.get(
@@ -182,11 +200,8 @@ async function getSmartQuizQuestion() {
 
     if (raw && raw.q && Array.isArray(raw.options) && raw.options.length === 4 && raw.a) {
       const qText = raw.q.trim();
-      // അടുത്തിടെ ചോദിച്ചതല്ലെങ്കിൽ മാത്രം നൽകുന്നു
-      if (!recentQuestions.includes(qText)) {
-        recentQuestions.push(qText);
-        if (recentQuestions.length > 50) recentQuestions.shift(); // 50 ചോദ്യങ്ങൾ കഴിഞ്ഞാൽ മാത്രമേ വീണ്ടും വരാൻ സാധ്യതയുള്ളൂ
-
+      if (!quizHistory.includes(qText)) {
+        recordQuestion(qText);
         return {
           q: qText,
           options: raw.options,
@@ -197,16 +212,10 @@ async function getSmartQuizQuestion() {
     }
   } catch (e) {}
 
-  // AI പരാജയപ്പെട്ടാൽ അടുത്തിടെ വരാത്ത ബാക്ക്-അപ്പ് ചോദ്യം നൽകുന്നു
-  const unusedBackups = richBackupPool.filter((item) => !recentQuestions.includes(item.q));
-  const fallback = unusedBackups.length > 0
-    ? unusedBackups[Math.floor(Math.random() * unusedBackups.length)]
-    : richBackupPool[Math.floor(Math.random() * richBackupPool.length)];
-
-  recentQuestions.push(fallback.q);
-  if (recentQuestions.length > 50) recentQuestions.shift();
-
-  return fallback;
+  const unused = richBackupPool.filter((item) => !quizHistory.includes(item.q.trim()));
+  const chosen = unused.length > 0 ? unused[Math.floor(Math.random() * unused.length)] : richBackupPool[Math.floor(Math.random() * richBackupPool.length)];
+  recordQuestion(chosen.q);
+  return chosen;
 }
 
 // ------------------- ഗെയിംസ് ഹെൽപ്പ് മെനു (.games) -------------------
@@ -223,27 +232,26 @@ Module(
       `╭━━━〔 🎮 *OGGY-MD GAME HUB* 〕━━━╮\n\n` +
       `┃ 1️⃣ *മലയാളം ക്വിസ് (AI Trivia)*\n` +
       `┃ • കമാൻഡ്: \`.quiz\`\n` +
-      `┃ • ലോകവിഷയങ്ങളിലുള്ള പുതിയ ചോദ്യങ്ങൾ വരും.\n` +
-      `┃ • റിപ്ലൈ ആയി *A, B, C, അല്ലെങ്കിൽ D* എന്ന് അയക്കുക.\n\n` +
-      `┃ 2️⃣ *ഇമോജി സിനിമ (Emoji Movie)*\n` +
+      `┃ • വ്യത്യസ്ത വിഷയങ്ങളിലെ ചോദ്യങ്ങൾ വരും.\n` +
+      `┃ • റിപ്ലൈ ആയി *A, B, C, അല്ലെങ്കിൽ D* അയക്കുക.\n` +
+      `┃ ⚠️ *ശ്രദ്ധിക്കുക: ഒരാൾക്ക് ഒരൊറ്റ തവണ മാത്രമേ ഉത്തരം നൽകാൻ അവസരമുള്ളൂ!*\n\n` +
+      `┃ 2️⃣ *സ്പീഡ് മാത്സ് ചലഞ്ച് (Speed Math)*\n` +
+      `┃ • കമാൻഡ്: \`.math\`\n` +
+      `┃ • വേഗത്തിൽ കണക്ക് കൂട്ടി നമ്പർ ടൈപ്പ് ചെയ്യുക.\n\n` +
+      `┃ 3️⃣ *ഇമോജി സിനിമ (Emoji Movie)*\n` +
       `┃ • കമാൻഡ്: \`.emoji\`\n` +
-      `┃ • ഇമോജികൾ കണ്ട് സിനിമയുടെ പേര് കണ്ടെത്തുക.\n` +
-      `┃ • ഉദാഹരണം: 👑 + 🗡️ കണ്ടാൽ റിപ്ലൈ ആയി *കിരീടം* എന്ന് അയക്കുക.\n\n` +
-      `┃ 3️⃣ *അക്ഷരക്കൂട്ടം (Word Scramble)*\n` +
+      `┃ • ഇമോജികൾ കണ്ട് സിനിമയുടെ പേര് കണ്ടെത്തുക.\n\n` +
+      `┃ 4️⃣ *അക്ഷരക്കൂട്ടം (Word Scramble)*\n` +
       `┃ • കമാൻഡ്: \`.scramble\`\n` +
-      `┃ • മാറിമറിഞ്ഞ അക്ഷരങ്ങൾ നേരെയാക്കി വാക്ക് പറയുക.\n` +
-      `┃ • ഉദാഹരണം: *'ലം-മാ-ള-യ'* കണ്ടാൽ റിപ്ലൈ ആയി *മലയാളം* എന്ന് അയക്കുക.\n\n` +
-      `┃ 4️⃣ *നമ്പർ കണ്ടുപിടിക്കൽ (Number Guess)*\n` +
+      `┃ • മാറിമറിഞ്ഞ അക്ഷരങ്ങൾ നേരെയാക്കി വാക്ക് പറയുക.\n\n` +
+      `┃ 5️⃣ *നമ്പർ കണ്ടുപിടിക്കൽ (Number Guess)*\n` +
       `┃ • കമാൻഡ്: \`.guess\`\n` +
-      `┃ • ബോട്ട് വിചാരിച്ച 1 മുതൽ 100 വരെയുള്ള നമ്പർ കണ്ടെത്തുക.\n` +
-      `┃ • നമ്പറുകൾ ടൈപ്പ് ചെയ്യുമ്പോൾ കൂടുതൽ/കുറവ് ഹിന്റുകൾ ലഭിക്കും.\n\n` +
-      `┃ 5️⃣ *Tic-Tac-Toe (X-O കളി)*\n` +
+      `┃ • ബോട്ട് വിചാരിച്ച 1 മുതൽ 100 വരെയുള്ള നമ്പർ കണ്ടെത്തുക.\n\n` +
+      `┃ 6️⃣ *Tic-Tac-Toe (X-O കളി)*\n` +
       `┃ • കമാൻഡ്: \`.ttt @user\`\n` +
-      `┃ • ഗ്രൂപ്പിലെ കൂട്ടുകാരെ മെൻഷൻ ചെയ്ത് കളിക്കുക.\n` +
-      `┃ • ബോർഡിലെ നമ്പറുകൾ (1 മുതൽ 9 വരെ) അയച്ച് നീക്കുക.\n\n` +
-      `┃ 6️⃣ *ട്രൂത്ത് ഓർ ഡെയർ (Truth / Dare)*\n` +
-      `┃ • കമാൻഡ്: \`.truth\` അല്ലെങ്കിൽ \`.dare\`\n` +
-      `┃ • രസകരമായ ചോദ്യങ്ങളും ടാസ്കുകളും ബോട്ട് തരും.\n\n` +
+      `┃ • ഗ്രൂപ്പിലെ കൂട്ടുകാരെ ചലഞ്ച് ചെയ്ത് കളിക്കുക.\n\n` +
+      `┃ 7️⃣ *ട്രൂത്ത് ഓർ ഡെയർ (Truth / Dare)*\n` +
+      `┃ • കമാൻഡ്: \`.truth\` അല്ലെങ്കിൽ \`.dare\`\n\n` +
       `┃ 🏆 *സ്കോർ ബോർഡും റീസെറ്റും:*\n` +
       `┃ • \`.leaderboard\` - ഗ്രൂപ്പിലെ ടോപ്പ് സ്കോറർമാർ.\n` +
       `┃ • \`.resetquiz\` - സ്കോർ സീറോ ആക്കാൻ (അഡ്മിൻ/ഓണർ).\n` +
@@ -282,6 +290,7 @@ Module(
       `┃ 🇩 ${item.options[3]}\n` +
       `┃\n` +
       `┃ ⏳ *സമയം:* 60 സെക്കൻഡ്\n` +
+      `┃ 🔒 *ഓരോരുത്തർക്കും ഒരു അവസരം മാത്രം!*\n` +
       `┃ 💡 *ഉത്തരം നൽകാൻ ഈ മെസ്സേജിന് റിപ്ലൈ ആയി A, B, C, അല്ലെങ്കിൽ D എന്ന് അയക്കുക!*\n` +
       `╰━━━━━━━━━━━━━━━━━━━━━╯`;
 
@@ -294,6 +303,7 @@ Module(
     activeGame[message.jid] = {
       type: "quiz",
       ans: item.a.toUpperCase(),
+      attempted: [], // ഒരു തവണ മാത്രം ഉത്തരം നൽകാൻ ലോക്ക് ചെയ്യുന്നു
       timer: setTimeout(async () => {
         if (activeGame[message.jid] && activeGame[message.jid].type === "quiz") {
           await message.sendReply(
@@ -308,6 +318,69 @@ Module(
     };
   }
 );
+
+// ------------------- പുതിയ ഗെയിം: സ്പീഡ് മാത്സ് (.math) -------------------
+Module(
+  {
+    pattern: "math ?(.*)",
+    fromMe: isFromMe,
+    desc: "Speed Math calculation challenge",
+    usage: ".math",
+    use: "game",
+  },
+  async (message) => {
+    if (activeGame[message.jid]) {
+      return await message.sendReply(`*_⚠️ നിലവിൽ ഈ ഗ്രൂപ്പിൽ ഒരു ${activeGame[message.jid].type} ഗെയിം നടക്കുന്നുണ്ട്! അത് കഴിയട്ടെ._*`);
+    }
+
+    const n1 = Math.floor(Math.random() * 50) + 10;
+    const n2 = Math.floor(Math.random() * 40) + 5;
+    const ops = ["+", "-", "*"];
+    const op = ops[Math.floor(Math.random() * ops.length)];
+
+    let ans = 0;
+    if (op === "+") ans = n1 + n2;
+    if (op === "-") ans = n1 - n2;
+    if (op === "*") {
+      const small1 = Math.floor(Math.random() * 15) + 2;
+      const small2 = Math.floor(Math.random() * 12) + 2;
+      ans = small1 * small2;
+      return setupMathGame(message, `${small1} × ${small2}`, ans);
+    }
+
+    setupMathGame(message, `${n1} ${op} ${n2}`, ans);
+  }
+);
+
+async function setupMathGame(message, equation, ans) {
+  const mathText =
+    `╭━━━〔 🧮 *SPEED MATH* 〕━━━╮\n` +
+    `┃ വേഗത്തിൽ കണക്കുകൂട്ടി ഉത്തരം പറയൂ!\n` +
+    `┃\n` +
+    `┃ ❓ *ചോദ്യം:*  *${equation} = ?*\n` +
+    `┃\n` +
+    `┃ ⏳ *സമയം:* 30 സെക്കൻഡ്\n` +
+    `┃ 💡 *ഉത്തരം നേരിട്ട് നമ്പറായി അയക്കുക!*\n` +
+    `╰━━━━━━━━━━━━━━━━━━━━━╯`;
+
+  await message.sendReply(mathText);
+
+  activeGame[message.jid] = {
+    type: "math",
+    ans: ans.toString(),
+    timer: setTimeout(async () => {
+      if (activeGame[message.jid] && activeGame[message.jid].type === "math") {
+        await message.sendReply(
+          `╭━━━〔 ⌛ *സമയം കഴിഞ്ഞു!* 〕━━━╮\n` +
+          `┃ ആരും ശരിയുത്തരം നൽകിയില്ല!\n` +
+          `┃ ✅ *ശരിയുത്തരം:* ${ans}\n` +
+          `╰━━━━━━━━━━━━━━━━━━━━━╯`
+        );
+        delete activeGame[message.jid];
+      }
+    }, 30000),
+  };
+}
 
 // ------------------- 2. ഇമോജി സിനിമ (.emoji) -------------------
 Module(
@@ -584,7 +657,7 @@ Module(
     const senderJid = message.sender || message.data?.participant || message.jid;
     const senderNum = senderJid.split("@")[0];
 
-    // 1. ക്വിസ് ഉത്തരം ചെക്ക് ചെയ്യൽ
+    // 1. ക്വിസ് ഉത്തരം ചെക്ക് ചെയ്യൽ (സിംഗിൾ അറ്റെംപ്റ്റ് ലോക്ക് സഹിതം)
     if (current.type === "quiz") {
       const isReply = message.reply_message && (
         message.reply_message.text?.includes("OGGY-MD QUIZ") ||
@@ -599,6 +672,13 @@ Module(
       }
 
       if (selectedOption) {
+        // ഇതിനകം ഉത്തരം നൽകിയയാളാണെങ്കിൽ ബ്ലോക്ക് ചെയ്യുന്നു
+        if (current.attempted.includes(senderJid)) {
+          return await message.sendReply(`_⚠️ @${senderNum}, നിങ്ങൾ ഇതിനകം ഉത്തരം തിരഞ്ഞെടുത്തതാണ്! ഒരു ചോദ്യത്തിന് ഒരു അവസരം മാത്രം._`, { mentions: [senderJid] });
+        }
+
+        current.attempted.push(senderJid);
+
         if (selectedOption === current.ans) {
           clearTimeout(current.timer);
           delete activeGame[message.jid];
@@ -612,8 +692,29 @@ Module(
             `╰━━━━━━━━━━━━━━━━━━━━━╯`;
           await message.client.sendMessage(message.jid, { text: winMsg, mentions: [senderJid] }, { quoted: message.data });
         } else {
-          await message.sendReply("_❌ തെറ്റായ ഉത്തരം! വീണ്ടും ശ്രമിക്കൂ..._");
+          await message.client.sendMessage(
+            message.jid,
+            { text: `_❌ തെറ്റായ ഉത്തരം (@${senderNum})! നിങ്ങളുടെ അവസരം കഴിഞ്ഞു._`, mentions: [senderJid] },
+            { quoted: message.data }
+          );
         }
+      }
+    }
+
+    // 1.1 മാത്സ് ഗെയിം ഉത്തരം ചെക്ക് ചെയ്യൽ
+    else if (current.type === "math") {
+      if (rawText === current.ans) {
+        clearTimeout(current.timer);
+        delete activeGame[message.jid];
+        const totalPoints = addScore(message.jid, senderJid, 10);
+        const winMsg =
+          `╭━━━〔 🧮 *കണക്ക് ശരിയാണ്!* 〕━━━╮\n` +
+          `┃ 👤 *വിജയി:* @${senderNum}\n` +
+          `┃ ✅ *ഉത്തരം:* ${current.ans}\n` +
+          `┃ 🏆 *പോയിന്റ്:* +10\n` +
+          `┃ 📊 *ആകെ സ്കോർ:* ${totalPoints} Pts\n` +
+          `╰━━━━━━━━━━━━━━━━━━━━━╯`;
+        await message.client.sendMessage(message.jid, { text: winMsg, mentions: [senderJid] }, { quoted: message.data });
       }
     }
 
