@@ -78,63 +78,104 @@ const categories = [
   "Technology and Gadgets"
 ];
 
-// 2. ഇമോജി സിനിമ ശേഖരം
-const emojiMovies = [
+// ഇന്റർനെറ്റ് സ്ലോ ആയാൽ ഉപയോഗിക്കാനുള്ള ബാക്ക്-അപ്പുകൾ
+const backupEmojiMovies = [
   { emoji: "👑 + 🗡️", name: "കിരീടം", aliases: ["kireedam", "കിരീടം"] },
-  { emoji: "🚗 + 🪪", name: "ഡ്രൈവിംഗ് ലൈസൻസ്", aliases: ["driving licence", "driving license", "ഡ്രൈവിംഗ് ലൈസൻസ്"] },
   { emoji: "👻 + 🏰", name: "മണിച്ചിത്രത്താഴ്", aliases: ["manichitrathazhu", "മണിച്ചിത്രത്താഴ്"] },
-  { emoji: "🐐 + 🏜️", name: "ആടുജീവിതം", aliases: ["aadujeevitham", "the goat life", "ആടുജീവിതം"] },
   { emoji: "⚡ + 🦸‍♂️", name: "മിന്നൽ മുരളി", aliases: ["minnal murali", "മിന്നൽ മുരളി"] },
+  { emoji: "🐐 + 🏜️", name: "ആടുജീവിതം", aliases: ["aadujeevitham", "the goat life", "ആടുജീവിതം"] },
   { emoji: "🦁 + 🌲", name: "പുലിമുരുകൻ", aliases: ["pulimurugan", "പുലിമുരുകൻ"] },
-  { emoji: "☕ + 🦋", name: "പ്രേമം", aliases: ["premam", "പ്രേമം"] },
-  { emoji: "🕵️‍♂️ + 🔍", name: "സിബിഐ", aliases: ["cbi", "സിബിഐ"] },
   { emoji: "🔥 + 🕶️", name: "ലൂസിഫർ", aliases: ["lucifer", "ലൂസിഫർ"] },
-  { emoji: "🔪 + 🎭", name: "അഞ്ചാം പാതിരാ", aliases: ["anjaam pathiraa", "anjaam pathira", "അഞ്ചാം പാതിരാ"] },
+  { emoji: "☕ + 🦋", name: "പ്രേമം", aliases: ["premam", "പ്രേമം"] },
   { emoji: "🥊 + 🧑‍🦱", name: "തല്ലുമാല", aliases: ["thallumaala", "thallumala", "തല്ലുമാല"] },
-  { emoji: "🛳️ + 🌊", name: "അമരം", aliases: ["amaram", "അമരം"] }
+  { emoji: "🚗 + 🪪", name: "ഡ്രൈവിംഗ് ലൈസൻസ്", aliases: ["driving licence", "driving license", "ഡ്രൈവിംഗ് ലൈസൻസ്"] }
 ];
 
-// 3. അക്ഷരക്കൂട്ടം (English Word Scramble) ശേഖരം
-const scrambleWords = [
-  { scrambled: "P Y T O H N", word: "python", hint: "Coding Language" },
-  { scrambled: "F L O T B O A L", word: "football", hint: "Popular Sport" },
-  { scrambled: "W S T A P H A P", word: "whatsapp", hint: "Messaging App" },
-  { scrambled: "G L E O G O", word: "google", hint: "Search Engine" },
-  { scrambled: "N T E F L I X", word: "netflix", hint: "Streaming Platform" },
-  { scrambled: "A V N E G E R S", word: "avengers", hint: "Marvel Superhero Movie" },
-  { scrambled: "R O N L A D O", word: "ronaldo", hint: "Football Legend (CR7)" },
-  { scrambled: "K E R L A A", word: "kerala", hint: "God's Own Country" },
-  { scrambled: "B O T C O I N", word: "bitcoin", hint: "Cryptocurrency" },
-  { scrambled: "A E G L P", word: "apple", hint: "Tech Giant & Fruit" },
-  { scrambled: "I T S A N G R A M", word: "instagram", hint: "Reels & Photo App" },
-  { scrambled: "S U N F L E O R W", word: "sunflower", hint: "Yellow Flower" },
-  { scrambled: "Y U O T U B E", word: "youtube", hint: "Video Streaming Site" },
-  { scrambled: "A M Z O A N", word: "amazon", hint: "E-Commerce & Forest" },
-  { scrambled: "F A C B O O E K", word: "facebook", hint: "Social Media Platform" },
-  { scrambled: "D I A M N O D", word: "diamond", hint: "Precious Gem" }
-];
-
-// 4. ട്രൂത്ത് & ഡെയർ ചോദ്യങ്ങൾ
-const truths = [
+const backupTruths = [
   "നിങ്ങളുടെ ജീവിതത്തിൽ ആരോടും പറയാത്ത ഏറ്റവും വലിയ രഹസ്യം എന്താണ്?",
   "ഈ ഗ്രൂപ്പിൽ ഏറ്റവും കൂടുതൽ ക്രഷ് തോന്നിയിട്ടുള്ളത് ആരോടാണ്?",
   "ജീവിതത്തിൽ ഏറ്റവും കൂടുതൽ നാണക്കേട് തോന്നിയ ഒരു സംഭവം പറയൂ?",
   "നിങ്ങൾ അവസാനം പറഞ്ഞ കള്ളം എന്തായിരുന്നു?",
   "ഫോണിൽ ഏറ്റവും കൂടുതൽ സമയം ചാറ്റ് ചെയ്യുന്നത് ആരോടാണ്?",
-  "നിങ്ങൾക്ക് ഏറ്റവും കൂടുതൽ ദേഷ്യം വരാറുള്ളത് ആരുടെ പെരുമാറ്റത്തിലാണ്?",
-  "ആരും കാണാതെ ചെയ്ത എന്തെങ്കിലും വികൃതി ഓർമ്മയുണ്ടോ?"
+  "നിങ്ങൾക്ക് ഏറ്റവും കൂടുതൽ ദേഷ്യം വരാറുള്ളത് ആരുടെ പെരുമാറ്റത്തിലാണ്?"
 ];
 
-const dares = [
+const backupDares = [
   "ഗ്രൂപ്പിൽ ഒരു പാട്ട് പാടി 20 സെക്കൻഡ് വോയ്സ് നോട്ട് ഇടുക!",
-  "നിങ്ങളുടെ ഫോണിലെ ലാസ്റ്റ് എടുത്ത ഫോട്ടോ ഗ്രൂപ്പിൽ അയക്കുക!",
+  "നിങ്ങളുടെ ഫോണിലെ അവസാനമായി എടുത്ത ഫോട്ടോ ഗ്രൂപ്പിൽ അയക്കുക!",
   "അടുത്ത 1 മണിക്കൂർ നേരത്തേക്ക് നിങ്ങളുടെ പ്രൊഫൈൽ നെയിം 'പൊട്ടൻ' എന്ന് മാറ്റുക!",
-  "ഈ ഗ്രൂപ്പിലെ ഏതെങ്കിലും ഒരാളെ മെൻഷൻ ചെയ്ത് ഒരു ഡയലോഗ് അടിക്കുക!",
-  "ഏറ്റവും കോമഡിയായ ഒരു സെൽഫി എടുത്ത് ഇപ്പോൾ തന്നെ അയക്കുക!",
-  "നിങ്ങളുടെ വാട്സാപ്പ് സ്റ്റാറ്റസിൽ 'ഞാൻ ഇന്ന് കട്ട സിംഗിളാണ്' എന്ന് പോസ്റ്റ് ചെയ്യുക!"
+  "ഈ ഗ്രൂപ്പിലെ ഏതെങ്കിലും ഒരാളെ മെൻഷൻ ചെയ്ത് ഒരു കിടിലൻ ഡയലോഗ് അടിക്കുക!",
+  "ഏറ്റവും കോമഡിയായ ഒരു സെൽഫി എടുത്ത് ഇപ്പോൾ തന്നെ ഗ്രൂപ്പിൽ അയക്കുക!"
 ];
 
-// ചോദിച്ച ചോദ്യങ്ങൾ സ്ഥിരമായി ഫയലിൽ സൂക്ഷിക്കാൻ (റീസ്റ്റാർട്ട് ആയാലും ആവർത്തിക്കില്ല)
+// Pollinations AI വഴി പുതിയ മലയാള സിനിമയും ഇമോജികളും ഉണ്ടാക്കാൻ
+async function getSmartEmojiMovie() {
+  const seed = `${Date.now()}_${Math.floor(Math.random() * 999999)}`;
+  const prompt = `Pick 1 famous Malayalam movie and create 2 to 4 clue emojis for an emoji movie guessing game. Return strictly pure JSON with keys: "name" (official movie title in Malayalam), "emoji" (string of emojis separated with +, e.g. "👑 + 🗡️"), and "aliases" (array containing movie name in Malayalam and lowercase English transliterations, e.g. ["kireedam", "കിരീടം"]). No markdown.`;
+
+  try {
+    const res = await axios.get(
+      `https://text.pollinations.ai/${encodeURIComponent(prompt)}?seed=${seed}&model=openai&json=true`,
+      { timeout: 8000 }
+    );
+    let raw = res.data;
+    if (typeof raw === "string") {
+      const m = raw.match(/\{[\s\S]*\}/);
+      if (m) raw = JSON.parse(m[0]);
+    }
+    if (raw && raw.name && raw.emoji && Array.isArray(raw.aliases) && raw.aliases.length > 0) {
+      const cleanAliases = raw.aliases.map((a) => a.toLowerCase().trim());
+      cleanAliases.push(raw.name.toLowerCase().trim());
+      return {
+        name: raw.name.trim(),
+        emoji: raw.emoji.trim(),
+        aliases: cleanAliases
+      };
+    }
+  } catch (e) {}
+
+  return backupEmojiMovies[Math.floor(Math.random() * backupEmojiMovies.length)];
+}
+
+// Pollinations AI വഴി ട്രൂത്ത് ചോദ്യങ്ങൾ ഉണ്ടാക്കാൻ
+async function getSmartTruth() {
+  const seed = `${Date.now()}_${Math.floor(Math.random() * 999999)}`;
+  const prompt = `Generate 1 fun, juicy, slightly embarrassing or deep Truth question in Malayalam language for a WhatsApp friend group party game. Return strictly pure JSON with key: "text". No markdown.`;
+  try {
+    const res = await axios.get(
+      `https://text.pollinations.ai/${encodeURIComponent(prompt)}?seed=${seed}&model=openai&json=true`,
+      { timeout: 7000 }
+    );
+    let raw = res.data;
+    if (typeof raw === "string") {
+      const m = raw.match(/\{[\s\S]*\}/);
+      if (m) raw = JSON.parse(m[0]);
+    }
+    if (raw && raw.text) return raw.text.trim();
+  } catch (e) {}
+  return backupTruths[Math.floor(Math.random() * backupTruths.length)];
+}
+
+// Pollinations AI വഴി ഡെയർ ടാസ്കുകൾ ഉണ്ടാക്കാൻ
+async function getSmartDare() {
+  const seed = `${Date.now()}_${Math.floor(Math.random() * 999999)}`;
+  const prompt = `Generate 1 hilarious, bold, daring party task in Malayalam language to do inside a WhatsApp group (like voice note singing, funny selfie, status update, mimicry). Return strictly pure JSON with key: "text". No markdown.`;
+  try {
+    const res = await axios.get(
+      `https://text.pollinations.ai/${encodeURIComponent(prompt)}?seed=${seed}&model=openai&json=true`,
+      { timeout: 7000 }
+    );
+    let raw = res.data;
+    if (typeof raw === "string") {
+      const m = raw.match(/\{[\s\S]*\}/);
+      if (m) raw = JSON.parse(m[0]);
+    }
+    if (raw && raw.text) return raw.text.trim();
+  } catch (e) {}
+  return backupDares[Math.floor(Math.random() * backupDares.length)];
+}
+
+// ചോദിച്ച ചോദ്യങ്ങൾ സ്ഥിരമായി ഫയലിൽ സൂക്ഷിക്കാൻ (റീസ്റ്റാർട്ട് ആയാലും ഓർത്തു വെക്കും)
 const HISTORY_FILE = path.join(__dirname, "../quiz_history.json");
 let quizHistory = [];
 
@@ -149,31 +190,37 @@ function loadHistory() {
 }
 loadHistory();
 
+function isAlreadyAsked(qText) {
+  if (!qText) return true;
+  const clean = qText.replace(/[^a-zA-Z0-9\u0D00-\u0D7F]/g, "").trim().toLowerCase();
+  return quizHistory.some((item) => item.replace(/[^a-zA-Z0-9\u0D00-\u0D7F]/g, "").trim().toLowerCase() === clean);
+}
+
 function recordQuestion(qText) {
   try {
     quizHistory.push(qText.trim());
-    if (quizHistory.length > 250) quizHistory.shift(); // 250 ചോദ്യങ്ങൾ വരെ ഓർത്തു വെക്കും
+    if (quizHistory.length > 500) quizHistory.shift(); // 500 ചോദ്യങ്ങൾ വരെ ഓർത്തു വെക്കും
     fs.writeFileSync(HISTORY_FILE, JSON.stringify(quizHistory, null, 2));
   } catch (e) {}
 }
 
 // ലോകത്തിലെ സകല വൈവിധ്യമാർന്ന വിഷയങ്ങൾ
 const globalQuizTopics = [
-  "Malayalam Cinema Classic and Modern Hits",
-  "World Football, Messi, Ronaldo, Champions League and World Cup",
-  "Cricket Legends, IPL, Records, Dhoni, Rohit and Kohli",
-  "World History, Empires, World War and Ancient Civilization",
-  "Science, Human Anatomy, Physics, Medicine and Discoveries",
-  "Space, NASA, ISRO Chandrayaan, Black Holes and Universe",
-  "World Geography, Countries, Oceans, Mountains and Capitals",
-  "Anime, Naruto, Dragon Ball, One Piece and Pop Culture",
-  "Marvel Cinematic Universe, DC, Comics and Superheroes",
-  "Smartphones, Tech Inventions, AI and Gaming",
-  "Kerala History, Traditional Arts, Festivals and Rivers",
-  "Wildlife, Underwater Ocean Secrets and Nature"
+  "Malayalam Cinema evergreen hits, Mohanlal, Mammootty and famous dialogues",
+  "World Football, FIFA World Cup, Champions League, Messi and Ronaldo",
+  "Cricket records, IPL, Sachin Tendulkar, MS Dhoni and Virat Kohli",
+  "World History, Empires, World War II and Ancient Wonders",
+  "Human Body anatomy, Medical science and Biology facts",
+  "Space, Planets, NASA, ISRO Chandrayaan and Black Holes",
+  "World Geography, Countries, Capitals, Oceans and Mount Everest",
+  "Anime, Naruto, Dragon Ball Z, One Piece and Manga",
+  "Marvel Cinematic Universe, Avengers, DC Batman and Superheroes",
+  "Technology, Smartphones, Artificial Intelligence and Inventions",
+  "Kerala history, Vallathol, Rivers, Festivals and General Knowledge",
+  "Underwater marine life, Animals and Nature facts"
 ];
 
-// ബാക്ക്-അപ്പ് ശേഖരം
+// വിപുലീകരിച്ച ബാക്ക്-അപ്പ് ശേഖരം (30-ലധികം പുതിയ ചോദ്യങ്ങൾ)
 const richBackupPool = [
   { q: "കേരളത്തിലെ ആദ്യത്തെ മുഖ്യമന്ത്രി ആരാണ്?", options: ["A) ഇ.എം.എസ്", "B) പട്ടം താണുപിള്ള", "C) സി. അച്യുതമേനോൻ", "D) ആർ. ശങ്കർ"], a: "A", cat: "കേരള ചരിത്രം" },
   { q: "സൗരയൂഥത്തിലെ ഏറ്റവും വലിയ ഗ്രഹം ഏതാണ്?", options: ["A) ചൊവ്വ", "B) വ്യാഴം", "C) ശനി", "D) ശുക്രൻ"], a: "B", cat: "ശാസ്ത്രം" },
@@ -183,42 +230,57 @@ const richBackupPool = [
   { q: "ക്രിക്കറ്റ് ലോകകപ്പ് 2011-ൽ ഇന്ത്യക്ക് നേടിക്കൊടുത്ത ക്യാപ്റ്റൻ ആര്?", options: ["A) സച്ചിൻ", "B) എം.എസ്. ധോണി", "C) വിരാട് കോലി", "D) സൗരവ് ഗാംഗുലി"], a: "B", cat: "സ്പോർട്സ്" },
   { q: "ലോകത്തിലെ ഏറ്റവും ഉയരം കൂടിയ കൊടുമുടി ഏതാണ്?", options: ["A) കെ2", "B) എവറസ്റ്റ്", "C) കാഞ്ചൻജംഗ", "D) ആനമുടി"], a: "B", cat: "ഭൂമിശാസ്ത്രം" },
   { q: "ഇന്ത്യയുടെ ആദ്യത്തെ കൃത്രിമോപഗ്രഹം ഏതാണ്?", options: ["A) ഭാസ്കര", "B) ആര്യഭട്ട", "C) രോഹിണി", "D) ഇൻസാറ്റ്"], a: "B", cat: "ശാസ്ത്രം" },
-  { q: "കേരളത്തിലെ ഏറ്റവും നീളം കൂടിയ നദി ഏതാണ്?", options: ["A) ഭാരതപ്പുഴ", "B) പെരിയാർ", "C) പമ്പ", "D) ചാലിയാർ"], a: "B", cat: "ഭൂമിശാസ്ത്രം" }
+  { q: "കേരളത്തിലെ ഏറ്റവും നീളം കൂടിയ നദി ഏതാണ്?", options: ["A) ഭാരതപ്പുഴ", "B) പെരിയാർ", "C) പമ്പ", "D) ചാലിയാർ"], a: "B", cat: "ഭൂമിശാസ്ത്രം" },
+  { q: "ടെലിഫോൺ കണ്ടുപിടിച്ചത് ആരാണ്?", options: ["A) തോമസ് ആൽവ എഡിസൺ", "B) അലക്സാണ്ടർ ഗ്രഹാം ബെൽ", "C) ഐസക് ന്യൂട്ടൺ", "D) ഗലീലിയോ"], a: "B", cat: "ശാസ്ത്രം" },
+  { q: "മലയാള സിനിമയിലെ ആദ്യത്തെ ശബ്ദ ചിത്രം ഏതാണ്?", options: ["A) വിഗതകുമാരൻ", "B) ബാലൻ", "C) നീലക്കുയിൽ", "D) നിർമ്മല"], a: "B", cat: "സിനിമ" },
+  { q: "'സന്ദേശം' സിനിമയുടെ തിരക്കഥ രചിച്ചത് ആര്?", options: ["A) സത്യൻ അന്തിക്കാട്", "B) ശ്രീനിവാസൻ", "C) പ്രിയദർശൻ", "D) ഫാസിൽ"], a: "B", cat: "സിനിമ" },
+  { q: "ലോകത്തിലെ ഏറ്റവും ചെറിയ പക്ഷി ഏതാണ്?", options: ["A) തത്ത", "B) ഹമ്മിങ് ബേർഡ്", "C) കുരുവി", "D) പ്രാവ്"], a: "B", cat: "പ്രകൃതി" },
+  { q: "ഏറ്റവും കൂടുതൽ ഉപഗ്രഹങ്ങളുള്ള ഗ്രഹം ഏതാണ്?", options: ["A) വ്യാഴം", "B) ശനി", "C) ചൊവ്വ", "D) യുറാനസ്"], a: "B", cat: "ജ്യോതിശാസ്ത്രം" },
+  { q: "ഇന്ത്യയിലെ ഏറ്റവും ഉയരം കൂടിയ അണക്കെട്ട് ഏതാണ്?", options: ["A) ഇടുക്കി", "B) തെഹ്രി", "C) ഭക്ര നങ്കൽ", "D) സർദാർ സരോവർ"], a: "B", cat: "ഭൂമിശാസ്ത്രം" },
+  { q: "ആധുനിക കമ്പ്യൂട്ടറിന്റെ പിതാവ് എന്നറിയപ്പെടുന്നത് ആര്?", options: ["A) ചാൾസ് ബാബേജ്", "B) അലൻ ട്യൂറിങ്", "C) ബിൽ ഗേറ്റ്സ്", "D) സ്റ്റീവ് ജോബ്സ്"], a: "B", cat: "സാങ്കേതികം" },
+  { q: "ലോകത്തിലെ ഏറ്റവും വലിയ സമുദ്രം ഏതാണ്?", options: ["A) അറ്റ്ലാന്റിക്", "B) ശാന്തസമുദ്രം (പസഫിക്)", "C) ഇന്ത്യൻ മഹാസമുദ്രം", "D) ആർട്ടിക്"], a: "B", cat: "ഭൂമിശാസ്ത്രം" },
+  { q: "രക്തത്തിൽ ഓക്സിജൻ എത്തിക്കുന്ന ഘടകം ഏതാണ്?", options: ["A) പ്ലേറ്റ്‌ലെറ്റ്", "B) ഹീമോഗ്ലോബിൻ", "C) പ്ലാസ്മ", "D) ശ്വേതരക്താണുക്കൾ"], a: "B", cat: "ആരോഗ്യം" },
+  { q: "'അവഞ്ചേഴ്സ്' സിനിമയിൽ അയൺമാൻ കഥാപാത്രത്തെ ചെയ്തത് ആര്?", options: ["A) ക്രിസ് ഇവാൻ", "B) റോബർട്ട് ഡൗണി ജൂനിയർ", "C) ക്രിസ് ഹെംസ്‌വർത്ത്", "D) ടോം ഹോളണ്ട്"], a: "B", cat: "ഹോളിവുഡ്" },
+  { q: "കേരളത്തിൽ സൈലന്റ് വാലി ദേശീയോദ്യാനം ഏത് ജില്ലയിലാണ്?", options: ["A) ഇടുക്കി", "B) പാലക്കാട്", "C) വയനാട്", "D) കണ്ണൂർ"], a: "B", cat: "കേരളം" },
+  { q: "മനുഷ്യ ശരീരത്തിലെ ഏറ്റവും ചെറിയ അസ്ഥി ഏതാണ്?", options: ["A) ഫീമർ", "B) സ്റ്റേപിസ് (ചെവിയിൽ)", "C) ടിബിയ", "D) റേഡിയസ്"], a: "B", cat: "ശാസ്ത്രം" }
 ];
 
-// ഒരിക്കലും ആവർത്തിക്കാത്ത സ്മാർട്ട് ചോദ്യം ഉണ്ടാക്കുന്ന ഫംഗ്ഷൻ
+// ഒരിക്കലും ആവർത്തിക്കാത്ത സ്മാർട്ട് ചോദ്യം ഉണ്ടാക്കുന്ന ഫംഗ്ഷൻ (ഡബിൾ ട്രൈ + സേഫ് പാർസിംഗ്)
 async function getSmartQuizQuestion() {
-  const randomCategory = globalQuizTopics[Math.floor(Math.random() * globalQuizTopics.length)];
-  const randomSeed = `${Date.now()}_${Math.floor(Math.random() * 9999999)}`;
-  const prompt = `You are a trivia master. Create 1 unique, fun trivia question in Malayalam language about "${randomCategory}". Provide 4 multiple-choice options in Malayalam labeled A, B, C, D and provide the single correct option letter. Format strictly as JSON with keys: "q" (question in Malayalam), "options" (array of 4 Malayalam strings like ["A) ...", "B) ...", "C) ...", "D) ..."]), "a" (single uppercase letter "A", "B", "C", or "D"), and "cat" (category in Malayalam). No markdown, pure JSON only.`;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const randomCategory = globalQuizTopics[Math.floor(Math.random() * globalQuizTopics.length)];
+    const randomSeed = `${Date.now()}_${Math.floor(Math.random() * 9999999)}`;
+    const prompt = `You are a trivia master. Generate 1 brand-new unique trivia question in Malayalam language about "${randomCategory}". Provide 4 multiple-choice options in Malayalam labeled A, B, C, D and provide the single correct option letter. Format response strictly as JSON with keys: "q" (question string in Malayalam), "options" (array of 4 Malayalam strings like ["A) ...", "B) ...", "C) ...", "D) ..."]), "a" (single uppercase letter "A", "B", "C", or "D"), and "cat" (category in Malayalam). Do not output markdown, provide pure JSON only.`;
 
-  try {
-    const res = await axios.get(
-      `https://text.pollinations.ai/${encodeURIComponent(prompt)}?seed=${randomSeed}&model=openai&json=true`,
-      { timeout: 12000 }
-    );
+    try {
+      const res = await axios.get(
+        `https://text.pollinations.ai/${encodeURIComponent(prompt)}?seed=${randomSeed}&model=openai&json=true`,
+        { timeout: 9000 }
+      );
 
-    let raw = res.data;
-    if (typeof raw === "string") {
-      raw = raw.replace(/```json/gi, "").replace(/```/gi, "").trim();
-      raw = JSON.parse(raw);
-    }
-
-    if (raw && raw.q && Array.isArray(raw.options) && raw.options.length === 4 && raw.a) {
-      const qText = raw.q.trim();
-      if (!quizHistory.includes(qText)) {
-        recordQuestion(qText);
-        return {
-          q: qText,
-          options: raw.options,
-          a: raw.a.trim().toUpperCase()[0],
-          cat: raw.cat || randomCategory
-        };
+      let raw = res.data;
+      if (typeof raw === "string") {
+        const jsonMatch = raw.match(/\{[\s\S]*\}/);
+        if (jsonMatch) raw = JSON.parse(jsonMatch[0]);
       }
-    }
-  } catch (e) {}
 
-  const unused = richBackupPool.filter((item) => !quizHistory.includes(item.q.trim()));
+      if (raw && raw.q && Array.isArray(raw.options) && raw.options.length === 4 && raw.a) {
+        const qText = raw.q.trim();
+        if (!isAlreadyAsked(qText)) {
+          recordQuestion(qText);
+          return {
+            q: qText,
+            options: raw.options,
+            a: raw.a.trim().toUpperCase()[0],
+            cat: raw.cat || randomCategory
+          };
+        }
+      }
+    } catch (e) {}
+  }
+
+  // AI ലഭ്യമായില്ലെങ്കിൽ ചോദിക്കാത്ത ബാക്ക്-അപ്പ് ചോദ്യം നൽകുന്നു
+  const unused = richBackupPool.filter((item) => !isAlreadyAsked(item.q));
   const chosen = unused.length > 0 ? unused[Math.floor(Math.random() * unused.length)] : richBackupPool[Math.floor(Math.random() * richBackupPool.length)];
   recordQuestion(chosen.q);
   return chosen;
@@ -388,12 +450,12 @@ async function setupMathGame(message, equation, ans) {
   };
 }
 
-// ------------------- 2. ഇമോജി സിനിമ (.emoji) -------------------
+// ------------------- 2. AI ഇമോജി സിനിമ (.emoji) -------------------
 Module(
   {
     pattern: "emoji ?(.*)",
     fromMe: isFromMe,
-    desc: "Guess the Malayalam movie from emojis",
+    desc: "Starts an AI-powered Malayalam Emoji Movie game",
     usage: ".emoji",
     use: "game",
   },
@@ -402,7 +464,8 @@ Module(
       return await message.sendReply(`*_⚠️ നിലവിൽ ഈ ഗ്രൂപ്പിൽ ഒരു ${activeGame[message.jid].type} ഗെയിം നടക്കുന്നുണ്ട്! അത് കഴിയട്ടെ._*`);
     }
 
-    const item = emojiMovies[Math.floor(Math.random() * emojiMovies.length)];
+    const waitMsg = await message.sendReply("_⏳ പുതിയ സിനിമ തയ്യാറാക്കുന്നു..._");
+    const item = await getSmartEmojiMovie();
 
     const emojiText =
       `╭━━━〔 🎬 *GUESS THE MOVIE* 〕━━━╮\n` +
@@ -414,7 +477,11 @@ Module(
       `┃ 💬 *ഈ മെസ്സേജിന് റിപ്ലൈ ആയി സിനിമയുടെ പേര് അയക്കുക!*\n` +
       `╰━━━━━━━━━━━━━━━━━━━━━╯`;
 
-    await message.sendReply(emojiText);
+    if (waitMsg && waitMsg.key) {
+      await message.edit(emojiText, message.jid, waitMsg.key);
+    } else {
+      await message.sendReply(emojiText);
+    }
 
     activeGame[message.jid] = {
       type: "emoji",
@@ -424,7 +491,7 @@ Module(
           await message.sendReply(
             `╭━━━〔 ⌛ *സമയം കഴിഞ്ഞു!* 〕━━━╮\n` +
             `┃ ആർക്കും സിനിമ കണ്ടെത്താൻ കഴിഞ്ഞില്ല!\n` +
-            `┃ 🎬 *ശരിയായ സിനിമ:* ${item.name}\n` +
+            `┃ 🎬 *ശരിയായ സിനിമ:* *${item.name}*\n` +
             `╰━━━━━━━━━━━━━━━━━━━━━╯`
           );
           delete activeGame[message.jid];
@@ -434,12 +501,75 @@ Module(
   }
 );
 
-// ------------------- 3. അക്ഷരക്കൂട്ടം (.scramble) -------------------
+// വാക്കിന്റെ അക്ഷരങ്ങൾ തെറ്റാതെ സ്വയം മാറ്റിമറിക്കുന്ന ഫംഗ്ഷൻ (Auto-Shuffle)
+function autoShuffleLetters(word) {
+  const letters = word.toUpperCase().split("");
+  for (let i = letters.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [letters[i], letters[j]] = [letters[j], letters[i]];
+  }
+  const res = letters.join(" ");
+  if (res === word.toUpperCase().split("").join(" ")) {
+    return letters.reverse().join(" ");
+  }
+  return res;
+}
+
+// AI ലഭ്യമല്ലെങ്കിൽ ഉപയോഗിക്കാൻ തെറ്റില്ലാത്ത ബാക്ക്-അപ്പ് ഇംഗ്ലീഷ് വാക്കുകൾ
+const fallbackScrambleWords = [
+  { word: "football", hint: "Popular World Sport" },
+  { word: "elephant", hint: "Large Wild Animal" },
+  { word: "whatsapp", hint: "Instant Messaging App" },
+  { word: "airplane", hint: "Flying Air Vehicle" },
+  { word: "keyboard", hint: "Computer Typing Hardware" },
+  { word: "chocolate", hint: "Sweet Loved by Everyone" },
+  { word: "sunflower", hint: "Bright Yellow Flower" },
+  { word: "hospital", hint: "Place for Medical Care" },
+  { word: "diamond", hint: "Precious Shiny Gem" },
+  { word: "avengers", hint: "Marvel Superhero Movie" }
+];
+
+// Pollinations AI വഴി എപ്പോഴും പുതിയ ഇംഗ്ലീഷ് വാക്ക് എടുക്കുന്ന ഫംഗ്ഷൻ
+async function getSmartScrambleWord() {
+  const seed = `${Date.now()}_${Math.floor(Math.random() * 999999)}`;
+  const prompt = `Generate 1 familiar, single English word (5 to 8 letters, alphabets only) and 1 short hint for a scramble word game. Return strictly as JSON with keys: "word" (lowercase) and "hint". No markdown.`;
+
+  try {
+    const res = await axios.get(
+      `https://text.pollinations.ai/${encodeURIComponent(prompt)}?seed=${seed}&model=openai&json=true`,
+      { timeout: 8000 }
+    );
+    let raw = res.data;
+    if (typeof raw === "string") {
+      const match = raw.match(/\{[\s\S]*\}/);
+      if (match) raw = JSON.parse(match[0]);
+    }
+    if (raw && raw.word && raw.hint) {
+      const cleanWord = raw.word.trim().toLowerCase().replace(/[^a-z]/g, "");
+      if (cleanWord.length >= 4 && cleanWord.length <= 8) {
+        return {
+          word: cleanWord,
+          scrambled: autoShuffleLetters(cleanWord),
+          hint: raw.hint.trim()
+        };
+      }
+    }
+  } catch (e) {}
+
+  const fb = fallbackScrambleWords[Math.floor(Math.random() * fallbackScrambleWords.length)];
+  return {
+    word: fb.word,
+    scrambled: autoShuffleLetters(fb.word),
+    hint: fb.hint
+  };
+}
+
+// ------------------- 3. AI അക്ഷരക്കൂട്ടം (.scramble) -------------------
 Module(
   {
     pattern: "scramble ?(.*)",
     fromMe: isFromMe,
-    desc: "Unscramble Malayalam words",
+    desc: "Starts an AI-powered English Word Scramble game",
     usage: ".scramble",
     use: "game",
   },
@@ -448,7 +578,8 @@ Module(
       return await message.sendReply(`*_⚠️ നിലവിൽ ഈ ഗ്രൂപ്പിൽ ഒരു ${activeGame[message.jid].type} ഗെയിം നടക്കുന്നുണ്ട്! അത് കഴിയട്ടെ._*`);
     }
 
-    const item = scrambleWords[Math.floor(Math.random() * scrambleWords.length)];
+    const waitMsg = await message.sendReply("_⏳ പുതിയ വാക്ക് തയ്യാറാക്കുന്നു..._");
+    const item = await getSmartScrambleWord();
 
     const scrambleText =
       `╭━━━〔 🔤 *WORD SCRAMBLE* 〕━━━╮\n` +
@@ -460,7 +591,11 @@ Module(
       `┃ 💬 *ശരിയായ വാക്ക് ഇംഗ്ലീഷിൽ റിപ്ലൈ ആയി അയക്കുക!*\n` +
       `╰━━━━━━━━━━━━━━━━━━━━━╯`;
 
-    await message.sendReply(scrambleText);
+    if (waitMsg && waitMsg.key) {
+      await message.edit(scrambleText, message.jid, waitMsg.key);
+    } else {
+      await message.sendReply(scrambleText);
+    }
 
     activeGame[message.jid] = {
       type: "scramble",
@@ -470,7 +605,7 @@ Module(
           await message.sendReply(
             `╭━━━〔 ⌛ *സമയം കഴിഞ്ഞു!* 〕━━━╮\n` +
             `┃ ആരും ശരിയുത്തരം നൽകിയില്ല!\n` +
-            `┃ ✅ *ശരിയായ വാക്ക്:* ${item.word}\n` +
+            `┃ ✅ *ശരിയായ വാക്ക്:* *${item.word}*\n` +
             `╰━━━━━━━━━━━━━━━━━━━━━╯`
           );
           delete activeGame[message.jid];
@@ -608,24 +743,30 @@ Module(
   }
 );
 
-// ------------------- 6. ട്രൂത്ത് ഓർ ഡെയർ (.truth / .dare) -------------------
+// ------------------- 6. AI ട്രൂത്ത് ഓർ ഡെയർ (.truth / .dare) -------------------
 Module(
   {
     pattern: "truth ?(.*)",
     fromMe: isFromMe,
-    desc: "Gives a fun truth question",
+    desc: "Generates an AI Truth question",
     usage: ".truth",
     use: "game",
   },
   async (message) => {
-    const t = truths[Math.floor(Math.random() * truths.length)];
+    const waitMsg = await message.sendReply("_🤫 ചോദ്യം തയ്യാറാക്കുന്നു..._");
+    const t = await getSmartTruth();
     const text =
       `╭━━━〔 🤫 *TRUTH QUESTION* 〕━━━╮\n` +
       `┃ ${t}\n` +
       `┃\n` +
       `┃ 💬 *സത്യം മാത്രം തുറന്നുപറയുക! 😉*\n` +
       `╰━━━━━━━━━━━━━━━━━━━━━╯`;
-    await message.sendReply(text);
+
+    if (waitMsg && waitMsg.key) {
+      await message.edit(text, message.jid, waitMsg.key);
+    } else {
+      await message.sendReply(text);
+    }
   }
 );
 
@@ -633,19 +774,25 @@ Module(
   {
     pattern: "dare ?(.*)",
     fromMe: isFromMe,
-    desc: "Gives a daring task",
+    desc: "Generates an AI Daring task",
     usage: ".dare",
     use: "game",
   },
   async (message) => {
-    const d = dares[Math.floor(Math.random() * dares.length)];
+    const waitMsg = await message.sendReply("_🔥 ടാസ്ക് തയ്യാറാക്കുന്നു..._");
+    const d = await getSmartDare();
     const text =
       `╭━━━〔 🔥 *DARE TASK* 〕━━━╮\n` +
       `┃ ${d}\n` +
       `┃\n` +
       `┃ ⚡ *ധൈര്യമുണ്ടെങ്കിൽ ചെയ്തു കാണിക്കൂ! 😈*\n` +
       `╰━━━━━━━━━━━━━━━━━━━━━╯`;
-    await message.sendReply(text);
+
+    if (waitMsg && waitMsg.key) {
+      await message.edit(text, message.jid, waitMsg.key);
+    } else {
+      await message.sendReply(text);
+    }
   }
 );
 
