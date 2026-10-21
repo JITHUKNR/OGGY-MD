@@ -4,78 +4,93 @@ const axios = require("axios");
 
 const isFromMe = botConfig.MODE === "public" ? false : true;
 
-// ലൈവ് മ്യൂസിക് എഞ്ചിൻ (ബ്ലോക്കുകൾ ഇല്ലാത്ത 3 എഞ്ചിനുകൾ)
-async function fetchSong(query) {
-  let errLogs = [];
-
-  // എഞ്ചിൻ 1: Vreden YT-Play (ഹൈ-സ്പീഡ് യൂട്യൂബ് സ്ട്രീം)
+// പാട്ടുകൾ ഹൈ-സ്പീഡ് CDN വഴി എടുക്കുന്ന ഫംഗ്ഷൻ (തടസ്സമില്ലാത്ത എഞ്ചിനുകൾ)
+async function fetchSongFast(query) {
+  // എഞ്ചിൻ 1: JioSaavn പ്രൈമറി സെർവർ (320kbps ഒറിജിനൽ ക്വാളിറ്റി + എച്ച്ഡി പോസ്റ്റർ)
   try {
-    const r1 = await axios.get(
-      `https://api.vreden.web.id/api/ytplay?query=${encodeURIComponent(query)}`,
-      { timeout: 15000 }
+    const res1 = await axios.get(
+      `https://saavn.dev/api/search/songs?query=${encodeURIComponent(query)}`,
+      { timeout: 8000 }
     );
-    const res = r1.data?.result;
-    const dl = res?.download?.url || res?.url;
-    if (res && dl) {
-      return {
-        title: res.metadata?.title || res.title || query,
-        author: res.metadata?.author?.name || res.author || "YouTube Music",
-        duration: res.metadata?.duration?.timestamp || res.duration || "N/A",
-        thumbnail: res.metadata?.thumbnail || res.thumbnail || "https://i.imgur.com/8QZ9Q8w.jpeg",
-        url: res.metadata?.url || "https://youtube.com",
-        audioUrl: dl
-      };
+    const results = res1.data?.data?.results || res1.data?.results || [];
+    if (results.length > 0) {
+      const s = results[0];
+      // ഡൗൺലോഡ് ലിങ്കുകൾ വേർതിരിക്കുന്നു (link അല്ലെങ്കിൽ url)
+      const dlList = s.downloadUrl || [];
+      const dlObj =
+        dlList.find((d) => d.quality === "320kbps") ||
+        dlList.find((d) => d.quality === "160kbps") ||
+        dlList[dlList.length - 1];
+
+      const audioLink = dlObj?.url || dlObj?.link || s.media_url;
+
+      const imgList = s.image || [];
+      const imgObj =
+        imgList.find((i) => i.quality === "500x500") ||
+        imgList[imgList.length - 1];
+
+      const thumbLink = imgObj?.url || imgObj?.link || "https://i.imgur.com/8QZ9Q8w.jpeg";
+
+      if (audioLink) {
+        return {
+          title: s.name ? s.name.replace(/&quot;/g, '"').replace(/&#039;/g, "'") : query,
+          author: s.primaryArtists || s.album?.name || "Oggy-MD Music",
+          duration: s.duration ? `${Math.floor(s.duration / 60)}:${(s.duration % 60).toString().padStart(2, "0")}` : "3:30",
+          thumbnail: thumbLink,
+          url: s.url || "https://jiosaavn.com",
+          audioUrl: audioLink
+        };
+      }
     }
-  } catch (e) {
-    errLogs.push(`Eng1: ${e.message}`);
-  }
+  } catch (e) {}
 
-  // എഞ്ചിൻ 2: Agatz Direct Engine
+  // എഞ്ചിൻ 2: JioSaavn ബാക്ക്-അപ്പ് മിറർ
   try {
-    const r2 = await axios.get(
-      `https://api.agatz.xyz/api/ytplay?message=${encodeURIComponent(query)}`,
-      { timeout: 15000 }
+    const res2 = await axios.get(
+      `https://jio-saavn-api.vercel.app/api/search/songs?query=${encodeURIComponent(query)}`,
+      { timeout: 8000 }
     );
-    const d = r2.data?.data;
-    const dl = d?.downloadUrl || d?.url;
-    if (d && dl) {
+    const results = res2.data?.data?.results || res2.data?.results || [];
+    if (results.length > 0) {
+      const s = results[0];
+      const dlList = s.downloadUrl || [];
+      const dlObj = dlList.find((d) => d.quality === "320kbps") || dlList[dlList.length - 1];
+      const audioLink = dlObj?.url || dlObj?.link || s.media_url;
+
+      if (audioLink) {
+        return {
+          title: s.name || query,
+          author: s.primaryArtists || "Oggy-MD Music",
+          duration: s.duration || "3:30",
+          thumbnail: s.image?.[s.image.length - 1]?.url || "https://i.imgur.com/8QZ9Q8w.jpeg",
+          url: s.url || "https://jiosaavn.com",
+          audioUrl: audioLink
+        };
+      }
+    }
+  } catch (e) {}
+
+  // എഞ്ചിൻ 3: Delirius ലൈവ് API (യൂട്യൂബ് ബാക്ക്-അപ്പ്)
+  try {
+    const res3 = await axios.get(
+      `https://delirius-apiofc.vercel.app/download/ytplay?query=${encodeURIComponent(query)}`,
+      { timeout: 12000 }
+    );
+    const d = res3.data?.data;
+    const dlLink = d?.download?.url || d?.url;
+    if (d && dlLink) {
       return {
         title: d.title || query,
-        author: d.channel || d.author || "YouTube Music",
-        duration: d.duration || "3:30",
-        thumbnail: d.thumbnail || "https://i.imgur.com/8QZ9Q8w.jpeg",
+        author: d.author?.name || d.author || "YouTube Music",
+        duration: d.duration || d.timestamp || "3:30",
+        thumbnail: d.image || d.thumbnail || "https://i.imgur.com/8QZ9Q8w.jpeg",
         url: d.url || "https://youtube.com",
-        audioUrl: dl
+        audioUrl: dlLink
       };
     }
-  } catch (e) {
-    errLogs.push(`Eng2: ${e.message}`);
-  }
+  } catch (e) {}
 
-  // എഞ്ചിൻ 3: Dhamz Engine
-  try {
-    const r3 = await axios.get(
-      `https://api.dhamzxploit.my.id/api/ytplay?query=${encodeURIComponent(query)}`,
-      { timeout: 15000 }
-    );
-    const d3 = r3.data?.result;
-    const dl = d3?.download?.url || d3?.url;
-    if (d3 && dl) {
-      return {
-        title: d3.title || query,
-        author: d3.author || "Oggy-MD",
-        duration: d3.duration || "N/A",
-        thumbnail: d3.thumbnail || "https://i.imgur.com/8QZ9Q8w.jpeg",
-        url: d3.url || "https://youtube.com",
-        audioUrl: dl
-      };
-    }
-  } catch (e) {
-    errLogs.push(`Eng3: ${e.message}`);
-  }
-
-  // എല്ലാം പരാജയപ്പെട്ടാൽ വന്ന കൃത്യമായ എറർ വ്യക്തമാക്കുന്നു
-  throw new Error(errLogs.join(" | "));
+  return null;
 }
 
 // കമാൻഡ്: tsong
@@ -83,7 +98,7 @@ Module(
   {
     pattern: "[.]?tsong ?(.*)",
     fromMe: isFromMe,
-    desc: "Plays music with album card",
+    desc: "Fast music downloader with verified CDN",
     usage: "tsong <song name>",
     use: "beta",
   },
@@ -103,9 +118,12 @@ Module(
     const waitMsg = await message.sendReply(`_🔎 "${query}" തിരയുന്നു... അല്പം കാത്തിരിക്കൂ..._`);
 
     try {
-      const song = await fetchSong(query);
+      const song = await fetchSongFast(query);
 
-      // ഇൻലൈൻ ആൽബം കാർഡ് ഡിസൈൻ
+      if (!song || !song.audioUrl) {
+        return await message.sendReply("_❌ പാട്ട് കണ്ടെത്താനായില്ല! മറ്റൊരു പേര് നൽകി നോക്കുക._");
+      }
+
       const contextInfo = {
         externalAdReply: {
           title: song.title,
@@ -117,17 +135,30 @@ Module(
         }
       };
 
-      // ഓഡിയോ അയക്കുന്നു
-      await message.client.sendMessage(
-        message.jid,
-        {
-          audio: { url: song.audioUrl },
-          mimetype: "audio/mp4",
-          fileName: `${song.title}.mp3`,
-          contextInfo: contextInfo
-        },
-        { quoted: message.data }
-      );
+      // ഓഡിയോ അയക്കുന്നു (പോസ്റ്റർ കാർഡ് സഹിതം)
+      try {
+        await message.client.sendMessage(
+          message.jid,
+          {
+            audio: { url: song.audioUrl },
+            mimetype: "audio/mp4",
+            fileName: `${song.title}.mp3`,
+            contextInfo: contextInfo
+          },
+          { quoted: message.data }
+        );
+      } catch (adError) {
+        // കാർഡിൽ പ്രശ്നം വന്നാൽ നേരിട്ട് ഓഡിയോ അയക്കുന്നു
+        await message.client.sendMessage(
+          message.jid,
+          {
+            audio: { url: song.audioUrl },
+            mimetype: "audio/mp4",
+            fileName: `${song.title}.mp3`
+          },
+          { quoted: message.data }
+        );
+      }
 
       if (waitMsg && waitMsg.key) {
         await message.client.sendMessage(message.jid, { delete: waitMsg.key });
