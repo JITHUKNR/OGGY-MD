@@ -4,126 +4,86 @@ const axios = require("axios");
 
 const isFromMe = botConfig.MODE === "public" ? false : true;
 
-// VPS ബ്ലോക്കുകൾ മറികടക്കാനുള്ള ബ്രൗസർ ഹെഡ്ഡറുകൾ
-const reqConfig = {
-  headers: {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Accept": "application/json, text/plain, */*"
-  },
-  timeout: 12000
-};
+// ലൈവ് മ്യൂസിക് എഞ്ചിൻ (ബ്ലോക്കുകൾ ഇല്ലാത്ത 3 എഞ്ചിനുകൾ)
+async function fetchSong(query) {
+  let errLogs = [];
 
-// പാട്ടുകൾ എടുക്കുന്ന ഫംഗ്ഷൻ (4 ലൈവ് മിററുകൾ സഹിതം)
-async function getSongAudio(query) {
-  // മിറർ 1: saavn.me (മലയാളം പാട്ടുകൾ 1 സെക്കൻഡിൽ അതിവേഗം ലഭിക്കാൻ)
+  // എഞ്ചിൻ 1: Vreden YT-Play (ഹൈ-സ്പീഡ് യൂട്യൂബ് സ്ട്രീം)
   try {
-    const res1 = await axios.get(
-      `https://saavn.me/api/search/songs?query=${encodeURIComponent(query)}`,
-      reqConfig
+    const r1 = await axios.get(
+      `https://api.vreden.web.id/api/ytplay?query=${encodeURIComponent(query)}`,
+      { timeout: 15000 }
     );
-    const results = res1.data?.data?.results;
-    if (results && results.length > 0) {
-      const s = results[0];
-      const dlObj =
-        s.downloadUrl?.find((d) => d.quality === "320kbps") ||
-        s.downloadUrl?.find((d) => d.quality === "160kbps") ||
-        s.downloadUrl?.[s.downloadUrl.length - 1];
-
-      const imgObj =
-        s.image?.find((i) => i.quality === "500x500") ||
-        s.image?.[s.image.length - 1];
-
-      if (dlObj && dlObj.url) {
-        return {
-          title: s.name ? s.name.replace(/&quot;/g, '"').replace(/&#039;/g, "'") : query,
-          author: s.primaryArtists || s.album?.name || "Oggy-MD Music",
-          duration: s.duration ? `${Math.floor(s.duration / 60)}:${(s.duration % 60).toString().padStart(2, "0")}` : "3:30",
-          thumbnail: imgObj?.url || "https://i.imgur.com/8QZ9Q8w.jpeg",
-          url: s.url || "https://jiosaavn.com",
-          audioUrl: dlObj.url
-        };
-      }
-    }
-  } catch (e) {}
-
-  // മിറർ 2: saavn.dev ബാക്ക്-അപ്പ്
-  try {
-    const res2 = await axios.get(
-      `https://saavn.dev/api/search/songs?query=${encodeURIComponent(query)}`,
-      reqConfig
-    );
-    const results = res2.data?.data?.results;
-    if (results && results.length > 0) {
-      const s = results[0];
-      const dlObj =
-        s.downloadUrl?.find((d) => d.quality === "320kbps") ||
-        s.downloadUrl?.[s.downloadUrl.length - 1];
-      const imgObj =
-        s.image?.find((i) => i.quality === "500x500") ||
-        s.image?.[s.image.length - 1];
-
-      if (dlObj && dlObj.url) {
-        return {
-          title: s.name ? s.name.replace(/&quot;/g, '"').replace(/&#039;/g, "'") : query,
-          author: s.primaryArtists || s.album?.name || "Oggy-MD Music",
-          duration: s.duration ? `${Math.floor(s.duration / 60)}:${(s.duration % 60).toString().padStart(2, "0")}` : "3:30",
-          thumbnail: imgObj?.url || "https://i.imgur.com/8QZ9Q8w.jpeg",
-          url: s.url || "https://jiosaavn.com",
-          audioUrl: dlObj.url
-        };
-      }
-    }
-  } catch (e) {}
-
-  // മിറർ 3: YouTube Play ഡയറക്റ്റ് സ്ട്രീം
-  try {
-    const res3 = await axios.get(
-      `https://api.siputzx.my.id/api/d/ytplay?query=${encodeURIComponent(query)}`,
-      reqConfig
-    );
-    const data = res3.data?.data;
-    const dlLink = data?.download || data?.dl || data?.url;
-    if (data && dlLink) {
+    const res = r1.data?.result;
+    const dl = res?.download?.url || res?.url;
+    if (res && dl) {
       return {
-        title: data.title || query,
-        author: data.channel || data.author || "YouTube Music",
-        duration: data.duration || "N/A",
-        thumbnail: data.thumbnail || "https://i.imgur.com/8QZ9Q8w.jpeg",
-        url: data.url || "https://youtube.com",
-        audioUrl: dlLink
+        title: res.metadata?.title || res.title || query,
+        author: res.metadata?.author?.name || res.author || "YouTube Music",
+        duration: res.metadata?.duration?.timestamp || res.duration || "N/A",
+        thumbnail: res.metadata?.thumbnail || res.thumbnail || "https://i.imgur.com/8QZ9Q8w.jpeg",
+        url: res.metadata?.url || "https://youtube.com",
+        audioUrl: dl
       };
     }
-  } catch (e) {}
+  } catch (e) {
+    errLogs.push(`Eng1: ${e.message}`);
+  }
 
-  // മിറർ 4: Delirius YouTube
+  // എഞ്ചിൻ 2: Agatz Direct Engine
   try {
-    const res4 = await axios.get(
-      `https://delirius-apiofc.vercel.app/download/ytplay?query=${encodeURIComponent(query)}`,
-      reqConfig
+    const r2 = await axios.get(
+      `https://api.agatz.xyz/api/ytplay?message=${encodeURIComponent(query)}`,
+      { timeout: 15000 }
     );
-    const d = res4.data?.data;
-    const dlLink = d?.download?.url || d?.url;
-    if (d && dlLink) {
+    const d = r2.data?.data;
+    const dl = d?.downloadUrl || d?.url;
+    if (d && dl) {
       return {
         title: d.title || query,
-        author: d.author?.name || d.author || "YouTube Music",
-        duration: d.duration || d.timestamp || "3:30",
-        thumbnail: d.image || d.thumbnail || "https://i.imgur.com/8QZ9Q8w.jpeg",
+        author: d.channel || d.author || "YouTube Music",
+        duration: d.duration || "3:30",
+        thumbnail: d.thumbnail || "https://i.imgur.com/8QZ9Q8w.jpeg",
         url: d.url || "https://youtube.com",
-        audioUrl: dlLink
+        audioUrl: dl
       };
     }
-  } catch (e) {}
+  } catch (e) {
+    errLogs.push(`Eng2: ${e.message}`);
+  }
 
-  return null;
+  // എഞ്ചിൻ 3: Dhamz Engine
+  try {
+    const r3 = await axios.get(
+      `https://api.dhamzxploit.my.id/api/ytplay?query=${encodeURIComponent(query)}`,
+      { timeout: 15000 }
+    );
+    const d3 = r3.data?.result;
+    const dl = d3?.download?.url || d3?.url;
+    if (d3 && dl) {
+      return {
+        title: d3.title || query,
+        author: d3.author || "Oggy-MD",
+        duration: d3.duration || "N/A",
+        thumbnail: d3.thumbnail || "https://i.imgur.com/8QZ9Q8w.jpeg",
+        url: d3.url || "https://youtube.com",
+        audioUrl: dl
+      };
+    }
+  } catch (e) {
+    errLogs.push(`Eng3: ${e.message}`);
+  }
+
+  // എല്ലാം പരാജയപ്പെട്ടാൽ വന്ന കൃത്യമായ എറർ വ്യക്തമാക്കുന്നു
+  throw new Error(errLogs.join(" | "));
 }
 
-// കമാൻഡ്: tsong (കുത്തുണ്ടെങ്കിലും ഇല്ലെങ്കിലും വലിയ/ചെറിയ അക്ഷരത്തിലും പ്രവർത്തിക്കും)
+// കമാൻഡ്: tsong
 Module(
   {
     pattern: "[.]?tsong ?(.*)",
     fromMe: isFromMe,
-    desc: "Fast music downloader with thumbnail banner card",
+    desc: "Plays music with album card",
     usage: "tsong <song name>",
     use: "beta",
   },
@@ -133,7 +93,7 @@ Module(
     if (!query) {
       return await message.sendReply(
         `╭━━━〔 🎵 *OGGY-MD MUSIC* 〕━━━╮\n` +
-        `┃ ⚠️ ഒരു പാട്ടിന്റെ പേര് നൽകുക!\n` +
+        `┃ ⚠️ പാട്ടിന്റെ പേര് നൽകുക!\n` +
         `┃\n` +
         `┃ 💡 *ഉദാഹരണം:* \`tsong malare\`\n` +
         `╰━━━━━━━━━━━━━━━━━━━━━╯`
@@ -143,13 +103,9 @@ Module(
     const waitMsg = await message.sendReply(`_🔎 "${query}" തിരയുന്നു... അല്പം കാത്തിരിക്കൂ..._`);
 
     try {
-      const song = await getSongAudio(query);
+      const song = await fetchSong(query);
 
-      if (!song || !song.audioUrl) {
-        return await message.sendReply("_❌ പാട്ട് കണ്ടെത്താൻ കഴിഞ്ഞില്ല! പേര് ശരിയാണോ എന്ന് പരിശോധിക്കുക._");
-      }
-
-      // ഇൻലൈൻ ആൽബം കാർഡ്
+      // ഇൻലൈൻ ആൽബം കാർഡ് ഡിസൈൻ
       const contextInfo = {
         externalAdReply: {
           title: song.title,
@@ -178,7 +134,7 @@ Module(
       }
 
     } catch (err) {
-      await message.sendReply("_⚠️ ഓഡിയോ അയക്കുന്നതിൽ പ്രശ്നം സംഭവിച്ചു! വീണ്ടും ശ്രമിക്കുക._");
+      await message.sendReply(`_⚠️ ഡൗൺലോഡ് പരാജയപ്പെട്ടു: ${err.message}_`);
     }
   }
 );
