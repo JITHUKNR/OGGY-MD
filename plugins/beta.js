@@ -4,68 +4,75 @@ const axios = require("axios");
 
 const isFromMe = botConfig.MODE === "public" ? false : true;
 
-// യൂട്യൂബിൽ നിന്ന് പാട്ടും വിവരങ്ങളും എടുക്കുന്ന ഫംഗ്ഷൻ (ബാക്ക്-അപ്പ് API-കൾ സഹിതം)
-async function getSongData(query) {
-  // 1. Delirius API
+// പാട്ടുകൾ ഹൈ-ക്വാളിറ്റിയിൽ എടുക്കുന്ന സ്മാർട്ട് എഞ്ചിൻ (മൾട്ടിപ്പിൾ പ്രൊവൈഡർ)
+async function getSongAudio(query) {
+  // 1. പ്രൈമറി എഞ്ചിൻ: ഹൈ-സ്പീഡ് മ്യൂസിക് CDN (320kbps ഒറിജിനൽ ഓഡിയോ + എച്ച്ഡി പോസ്റ്റർ)
   try {
-    const searchRes = await axios.get(
-      `https://delirius-apiofc.vercel.app/download/ytsearch?query=${encodeURIComponent(query)}`,
-      { timeout: 10000 }
+    const res1 = await axios.get(
+      `https://saavn.dev/api/search/songs?query=${encodeURIComponent(query)}`,
+      { timeout: 8000 }
     );
-    const item = searchRes.data?.data?.[0];
-    if (item && item.url) {
-      const dlRes = await axios.get(
-        `https://delirius-apiofc.vercel.app/download/ytmp3?url=${encodeURIComponent(item.url)}`,
-        { timeout: 15000 }
-      );
-      const dlData = dlRes.data?.data;
-      if (dlData && dlData.download?.url) {
+    const results = res1.data?.data?.results;
+    if (results && results.length > 0) {
+      const s = results[0];
+      const dlObj =
+        s.downloadUrl?.find((d) => d.quality === "320kbps") ||
+        s.downloadUrl?.find((d) => d.quality === "160kbps") ||
+        s.downloadUrl?.[s.downloadUrl.length - 1];
+
+      const imgObj =
+        s.image?.find((i) => i.quality === "500x500") ||
+        s.image?.[s.image.length - 1];
+
+      if (dlObj && dlObj.url) {
         return {
-          title: item.title || "Song",
-          author: item.author?.name || "Oggy-MD Music",
-          duration: item.timestamp || item.duration || "N/A",
-          thumbnail: item.image || item.thumbnail,
-          url: item.url,
-          audioUrl: dlData.download.url
+          title: s.name ? s.name.replace(/&quot;/g, '"').replace(/&#039;/g, "'") : query,
+          author: s.primaryArtists || s.album?.name || "Oggy-MD Music",
+          duration: s.duration ? `${Math.floor(s.duration / 60)}:${(s.duration % 60).toString().padStart(2, "0")}` : "3:30",
+          thumbnail: imgObj?.url || "https://i.imgur.com/8QZ9Q8w.jpeg",
+          url: s.url || "https://jiosaavn.com",
+          audioUrl: dlObj.url
         };
       }
     }
   } catch (e) {}
 
-  // 2. BK9 API
+  // 2. ബാക്ക്-അപ്പ് എഞ്ചിൻ: യൂട്യൂബ് ഡൗൺലോഡർ API
   try {
-    const bkRes = await axios.get(
-      `https://bk9.fun/download/ytmp3?url=${encodeURIComponent(query)}`,
-      { timeout: 15000 }
+    const res2 = await axios.get(
+      `https://delirius-apiofc.vercel.app/download/ytplay?query=${encodeURIComponent(query)}`,
+      { timeout: 12000 }
     );
-    if (bkRes.data?.status && bkRes.data?.BK9) {
-      const b = bkRes.data.BK9;
+    const d = res2.data?.data;
+    const dlLink = d?.download?.url || d?.url;
+    if (d && dlLink) {
       return {
-        title: b.title || query,
-        author: b.author || "Oggy-MD Music",
-        duration: b.duration || "N/A",
-        thumbnail: b.thumbnail || b.image,
-        url: b.url || "https://youtube.com",
-        audioUrl: b.downloadUrl || b.link
+        title: d.title || query,
+        author: d.author?.name || d.author || "YouTube Music",
+        duration: d.duration || d.timestamp || "3:45",
+        thumbnail: d.image || d.thumbnail || "https://i.imgur.com/8QZ9Q8w.jpeg",
+        url: d.url || "https://youtube.com",
+        audioUrl: dlLink
       };
     }
   } catch (e) {}
 
-  // 3. Siputzx API
+  // 3. മൂന്നാമത്തെ ബാക്ക്-അപ്പ് എഞ്ചിൻ: BK9 API
   try {
-    const sipRes = await axios.get(
-      `https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(query)}`,
-      { timeout: 15000 }
+    const res3 = await axios.get(
+      `https://bk9.fun/download/ytmp3?url=${encodeURIComponent(query)}`,
+      { timeout: 12000 }
     );
-    if (sipRes.data?.status && sipRes.data?.data) {
-      const s = sipRes.data.data;
+    const b = res3.data?.BK9;
+    const dlUrl = b?.downloadUrl || b?.link;
+    if (b && dlUrl) {
       return {
-        title: s.title || query,
-        author: "Oggy-MD Music",
-        duration: "N/A",
-        thumbnail: s.thumbnail,
-        url: "https://youtube.com",
-        audioUrl: s.dl
+        title: b.title || query,
+        author: b.author || "Oggy-MD",
+        duration: b.duration || "N/A",
+        thumbnail: b.thumbnail || b.image || "https://i.imgur.com/8QZ9Q8w.jpeg",
+        url: b.url || "https://youtube.com",
+        audioUrl: dlUrl
       };
     }
   } catch (e) {}
@@ -73,13 +80,13 @@ async function getSongData(query) {
   return null;
 }
 
-// ബീറ്റാ ടെസ്റ്റ് കമാൻഡ്: .tsong <പാട്ടിന്റെ പേര്>
+// കമാൻഡ്: tsong (കുത്തിട്ടോ കുത്തില്ലാതെയോ പ്രവർത്തിക്കും)
 Module(
   {
-    pattern: "tsong ?(.*)",
+    pattern: "[.]?tsong ?(.*)",
     fromMe: isFromMe,
-    desc: "Beta test: Smart music card downloader with thumbnail banner",
-    usage: ".tsong <song name>",
+    desc: "Smart high-speed music downloader with interactive album card",
+    usage: "tsong <song name>",
     use: "beta",
   },
   async (message, match) => {
@@ -87,10 +94,10 @@ Module(
 
     if (!query) {
       return await message.sendReply(
-        `╭━━━〔 🧪 *BETA: MUSIC CARD* 〕━━━╮\n` +
-        `┃ ⚠️ ദയവായി പാട്ടിന്റെ പേര് നൽകുക!\n` +
+        `╭━━━〔 🧪 *OGGY-MD MUSIC* 〕━━━╮\n` +
+        `┃ ⚠️ ഒരു പാട്ടിന്റെ പേര് നൽകുക!\n` +
         `┃\n` +
-        `┃ 💡 *ഉദാഹരണം:* \`.tsong premam malare\`\n` +
+        `┃ 💡 *ഉദാഹരണം:* \`tsong premam malare\`\n` +
         `╰━━━━━━━━━━━━━━━━━━━━━╯`
       );
     }
@@ -98,13 +105,13 @@ Module(
     const waitMsg = await message.sendReply(`_🔎 "${query}" തിരയുന്നു... അല്പം കാത്തിരിക്കൂ..._`);
 
     try {
-      const song = await getSongData(query);
+      const song = await getSongAudio(query);
 
       if (!song || !song.audioUrl) {
-        return await message.sendReply("_❌ പാട്ട് കണ്ടെത്താനോ ഡൗൺലോഡ് ചെയ്യാനോ കഴിഞ്ഞില്ല! പേര് ശരിയാണോ എന്ന് നോക്കുക._");
+        return await message.sendReply("_❌ പാട്ട് കണ്ടെത്താനോ ഡൗൺലോഡ് ചെയ്യാനോ കഴിഞ്ഞില്ല! മറ്റൊരു പേര് നൽകി നോക്കുക._");
       }
 
-      // ഇൻലൈൻ ആൽബം കാർഡ് ഡിസൈൻ (externalAdReply)
+      // WhatsApp ഇൻലൈൻ മ്യൂസിക് പോസ്റ്റർ കാർഡ് (Spotify / YouTube Music സ്റ്റൈൽ)
       const contextInfo = {
         externalAdReply: {
           title: song.title,
@@ -116,7 +123,7 @@ Module(
         }
       };
 
-      // പാട്ട് കാർഡോട് കൂടി അയക്കുന്നു
+      // ഓഡിയോ കാർഡോട് കൂടി അയക്കുന്നു
       await message.client.sendMessage(
         message.jid,
         {
@@ -128,7 +135,7 @@ Module(
         { quoted: message.data }
       );
 
-      // സെർച്ചിംഗ് മെസ്സേജ് ഒഴിവാക്കുന്നു
+      // സെർച്ചിംഗ് മെസ്സേജ് ഡിലീറ്റ് ചെയ്യുന്നു
       if (waitMsg && waitMsg.key) {
         await message.client.sendMessage(message.jid, { delete: waitMsg.key });
       }
