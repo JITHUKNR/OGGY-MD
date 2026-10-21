@@ -94,18 +94,24 @@ const emojiMovies = [
   { emoji: "🛳️ + 🌊", name: "അമരം", aliases: ["amaram", "അമരം"] }
 ];
 
-// 3. അക്ഷരക്കൂട്ടം (Word Scramble) ശേഖരം
+// 3. അക്ഷരക്കൂട്ടം (English Word Scramble) ശേഖരം
 const scrambleWords = [
-  { scrambled: "ലി - പു - മു - രു - കൻ", word: "പുലിമുരുകൻ", hint: "സിനിമ" },
-  { scrambled: "ലം - മാ - ള - യ", word: "മലയാളം", hint: "ഭാഷ" },
-  { scrambled: "ത്താ - ഴ - മ - ണി - ച്ചി - ത്ര", word: "മണിച്ചിത്രത്താഴ്", hint: "സിനിമ" },
-  { scrambled: "ന്തേ - ശ - സ", word: "സന്ദേശം", hint: "സിനിമ" },
-  { scrambled: "രം - കി - രീതി", word: "കിരീടം", hint: "സിനിമ" },
-  { scrambled: "ഫർ - സി - ലൂ", word: "ലൂസിഫർ", hint: "സിനിമ" },
-  { scrambled: "ര - ളി - മു - ന്നൽ - മി", word: "മിന്നൽ മുരളി", hint: "സിനിമ" },
-  { scrambled: "ന്തം - കു - രു - കു", word: "കുരുക്കുന്തം", hint: "ഡയലോഗ് വാക്ക്" },
-  { scrambled: "യം - വി - ള - ച്ചോ", word: "വെളിച്ചം", hint: "പ്രകൃതി" },
-  { scrambled: "ഴ - പു - ര - താ - ഭ", word: "ഭാരതപ്പുഴ", hint: "കേരളത്തിലെ നദി" }
+  { scrambled: "P Y T O H N", word: "python", hint: "Coding Language" },
+  { scrambled: "F L O T B O A L", word: "football", hint: "Popular Sport" },
+  { scrambled: "W S T A P H A P", word: "whatsapp", hint: "Messaging App" },
+  { scrambled: "G L E O G O", word: "google", hint: "Search Engine" },
+  { scrambled: "N T E F L I X", word: "netflix", hint: "Streaming Platform" },
+  { scrambled: "A V N E G E R S", word: "avengers", hint: "Marvel Superhero Movie" },
+  { scrambled: "R O N L A D O", word: "ronaldo", hint: "Football Legend (CR7)" },
+  { scrambled: "K E R L A A", word: "kerala", hint: "God's Own Country" },
+  { scrambled: "B O T C O I N", word: "bitcoin", hint: "Cryptocurrency" },
+  { scrambled: "A E G L P", word: "apple", hint: "Tech Giant & Fruit" },
+  { scrambled: "I T S A N G R A M", word: "instagram", hint: "Reels & Photo App" },
+  { scrambled: "S U N F L E O R W", word: "sunflower", hint: "Yellow Flower" },
+  { scrambled: "Y U O T U B E", word: "youtube", hint: "Video Streaming Site" },
+  { scrambled: "A M Z O A N", word: "amazon", hint: "E-Commerce & Forest" },
+  { scrambled: "F A C B O O E K", word: "facebook", hint: "Social Media Platform" },
+  { scrambled: "D I A M N O D", word: "diamond", hint: "Precious Gem" }
 ];
 
 // 4. ട്രൂത്ത് & ഡെയർ ചോദ്യങ്ങൾ
@@ -447,11 +453,11 @@ Module(
     const scrambleText =
       `╭━━━〔 🔤 *WORD SCRAMBLE* 〕━━━╮\n` +
       `┃\n` +
-      `┃ 🧩 *അക്ഷരങ്ങൾ:*  ${item.scrambled}\n` +
-      `┃ 💡 *സൂചന:* ${item.hint}\n` +
+      `┃ 🧩 *Letters:*  *${item.scrambled}*\n` +
+      `┃ 💡 *Hint:* ${item.hint}\n` +
       `┃\n` +
       `┃ ⏳ *സമയം:* 60 സെക്കൻഡ്\n` +
-      `┃ 💬 *ശരിയായ വാക്ക് ഈ മെസ്സേജിന് റിപ്ലൈ ആയി അയക്കുക!*\n` +
+      `┃ 💬 *ശരിയായ വാക്ക് ഇംഗ്ലീഷിൽ റിപ്ലൈ ആയി അയക്കുക!*\n` +
       `╰━━━━━━━━━━━━━━━━━━━━━╯`;
 
     await message.sendReply(scrambleText);
