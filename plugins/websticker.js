@@ -7,7 +7,7 @@ const { exec } = require("child_process");
 
 const isFromMe = botConfig.MODE === "public" ? false : true;
 
-// ടെമ്പ് ഫയലുകൾ താൽക്കാലികമായി സൂക്ഷിക്കാനുള്ള ഫോൾഡർ
+// ടെമ്പ് ഫയലുകൾ സൂക്ഷിക്കാനുള്ള ഫോൾഡർ
 const TEMP_DIR = path.join(__dirname, "../temp");
 if (!fs.existsSync(TEMP_DIR)) {
   try {
@@ -16,104 +16,131 @@ if (!fs.existsSync(TEMP_DIR)) {
 }
 
 // -------------------------------------------------------------
-// 1. VPS ബ്ലോക്കാവാത്ത മൾട്ടി-പ്ലാറ്റ്‌ഫോം ഇമേജ് സെർച്ച് എഞ്ചിൻ
-//    (Bing Web, Pinterest, Lexica & AI Fallback)
+// 1. യഥാർത്ഥ ഫോട്ടോകളും മീമുകളും മാത്രം കണ്ടെത്തുന്ന മൾട്ടി-എഞ്ചിൻ
+//    (DuckDuckGo, Tenor Real Memes, Bing Real Photos)
 // -------------------------------------------------------------
-async function fetchWebStickerMedia(query, limit = 5) {
+async function fetchRealStickerMedia(query, limit = 5) {
   const collectedUrls = [];
 
-  // എഞ്ചിൻ 1: Bing Async Crawler (Google, Reddit, Pinterest ചിത്രങ്ങൾ VPS-ൽ ബ്ലോക്കാവാതെ എടുക്കുന്നു)
+  // എഞ്ചിൻ 1: DuckDuckGo Real Web & Meme Search (യഥാർത്ഥ ഫോട്ടോകൾ മാത്രം)
   try {
-    const searchUrl = `https://www.bing.com/images/async?q=${encodeURIComponent(
-      query + " sticker transparent png"
-    )}&mmasync=1&count=20`;
+    const ddgTokenUrl = `https://duckduckgo.com/?q=${encodeURIComponent(
+      query + " funny meme photo"
+    )}&iax=images&ia=images`;
 
-    const res = await axios.get(searchUrl, {
+    const tokenRes = await axios.get(ddgTokenUrl, {
       headers: {
         "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
       },
-      timeout: 8000
+      timeout: 6000
     });
 
-    const html = res.data || "";
-    // Bing async HTML-ൽ നിന്നുള്ള യഥാർത്ഥ മീഡിയ ലിങ്കുകൾ ഫിൽട്ടർ ചെയ്യുന്നു
-    const regex1 = /murl&quot;:&quot;(https?:\/\/[^&]+)&quot;/g;
-    const regex2 = /"murl":"(https?:\/\/[^"]+)"/g;
+    const vqd =
+      tokenRes.data.match(/vqd=["']?([0-9-]+)["']?/)?.[1] ||
+      tokenRes.data.match(/vqd=([0-9-]+)/)?.[1];
 
-    let match;
-    while ((match = regex1.exec(html)) !== null) {
-      const decoded = decodeURIComponent(match[1]);
-      if (!collectedUrls.includes(decoded) && !decoded.includes(".svg")) {
-        collectedUrls.push(decoded);
-        if (collectedUrls.length >= limit) break;
-      }
-    }
+    if (vqd) {
+      const ddgApiUrl = `https://duckduckgo.com/i.js?l=wt-wt&o=json&q=${encodeURIComponent(
+        query + " funny photo meme"
+      )}&vqd=${vqd}&f=,,,&p=1`;
 
-    if (collectedUrls.length < limit) {
-      while ((match = regex2.exec(html)) !== null) {
-        const decoded = decodeURIComponent(match[1]);
-        if (!collectedUrls.includes(decoded) && !decoded.includes(".svg")) {
-          collectedUrls.push(decoded);
+      const apiRes = await axios.get(ddgApiUrl, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          Referer: "https://duckduckgo.com/"
+        },
+        timeout: 6000
+      });
+
+      const results = apiRes.data?.results || [];
+      for (const item of results) {
+        if (
+          item.image &&
+          !item.image.endsWith(".svg") &&
+          !item.image.includes("vector") &&
+          !item.image.includes("clipart") &&
+          !collectedUrls.includes(item.image)
+        ) {
+          collectedUrls.push(item.image);
           if (collectedUrls.length >= limit) break;
         }
       }
     }
   } catch (e) {}
 
-  // എഞ്ചിൻ 2: Pinterest Direct Pins via Bing
+  // എഞ്ചിൻ 2: Tenor Viral Reaction & Meme GIF Engine (യഥാർത്ഥ സിനിമ & ട്രോൾ ക്ലിപ്പുകൾ)
   if (collectedUrls.length < limit) {
     try {
-      const pinUrl = `https://www.bing.com/images/async?q=${encodeURIComponent(
-        query + " site:pinterest.com sticker"
-      )}&mmasync=1&count=15`;
+      const tenorUrl = `https://g.tenor.com/v1/search?q=${encodeURIComponent(
+        query
+      )}&key=LIVDSRZULELA&limit=10`;
 
-      const pinRes = await axios.get(pinUrl, {
+      const tenorRes = await axios.get(tenorUrl, { timeout: 6000 });
+      const items = tenorRes.data?.results || [];
+
+      for (const item of items) {
+        const gifUrl =
+          item.media?.[0]?.gif?.url ||
+          item.media?.[0]?.tinygif?.url ||
+          item.media?.[0]?.mediumgif?.url;
+
+        if (gifUrl && !collectedUrls.includes(gifUrl)) {
+          collectedUrls.push(gifUrl);
+          if (collectedUrls.length >= limit) break;
+        }
+      }
+    } catch (e) {}
+  }
+
+  // എഞ്ചിൻ 3: Bing Unescaped Photo Crawler (കാർട്ടൂണുകൾ പൂർണ്ണമായി ഫിൽട്ടർ ചെയ്യുന്നു)
+  if (collectedUrls.length < limit) {
+    try {
+      const bingUrl = `https://www.bing.com/images/async?q=${encodeURIComponent(
+        query + " photo -cartoon -vector -illustration -drawing"
+      )}&mmasync=1&count=25`;
+
+      const bRes = await axios.get(bingUrl, {
         headers: {
           "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         },
-        timeout: 7000
+        timeout: 6000
       });
 
-      const pinHtml = pinRes.data || "";
-      const pinRegex = /murl&quot;:&quot;(https?:\/\/[^&]+)&quot;/g;
-      let pMatch;
-      while ((pMatch = pinRegex.exec(pinHtml)) !== null) {
-        const decoded = decodeURIComponent(pMatch[1]);
-        if (!collectedUrls.includes(decoded) && !decoded.includes(".svg")) {
-          collectedUrls.push(decoded);
+      const html = bRes.data || "";
+      const regex = /(?:murl&quot;:&quot;|"murl":")([^"&]+)/g;
+      let match;
+
+      while ((match = regex.exec(html)) !== null) {
+        let cleanUrl = match[1].replace(/\\/g, "");
+        try {
+          cleanUrl = decodeURIComponent(cleanUrl);
+        } catch (err) {}
+
+        if (
+          cleanUrl.startsWith("http") &&
+          !cleanUrl.endsWith(".svg") &&
+          !cleanUrl.toLowerCase().includes("cartoon") &&
+          !cleanUrl.toLowerCase().includes("vector") &&
+          !collectedUrls.includes(cleanUrl)
+        ) {
+          collectedUrls.push(cleanUrl);
           if (collectedUrls.length >= limit) break;
         }
       }
     } catch (e) {}
   }
 
-  // എഞ്ചിൻ 3: Lexica Art HD Graphic Search
-  if (collectedUrls.length < limit) {
-    try {
-      const lexUrl = `https://lexica.art/api/v1/search?q=${encodeURIComponent(
-        query + " sticker"
-      )}`;
-      const lexRes = await axios.get(lexUrl, { timeout: 6000 });
-      const images = lexRes.data?.images || [];
-      for (const img of images) {
-        if (img.src && !collectedUrls.includes(img.src)) {
-          collectedUrls.push(img.src);
-          if (collectedUrls.length >= limit) break;
-        }
-      }
-    } catch (e) {}
-  }
-
-  // എഞ്ചിൻ 4: 100% ഗ്യാരണ്ടീഡ് ഫോൾബാക്ക് (ഒരിക്കലും പരാജയപ്പെടാതിരിക്കാൻ)
+  // എഞ്ചിൻ 4: 100% റിയലിസ്റ്റിക് ഒറിജിനൽ ഫോട്ടോ ഫോൾബാക്ക് (കാർട്ടൂൺ ഒരിക്കലും ഉണ്ടാക്കില്ല)
   let fallbackIndex = 1;
   while (collectedUrls.length < limit) {
     const seed = `${Date.now()}_${fallbackIndex}`;
     collectedUrls.push(
       `https://image.pollinations.ai/prompt/${encodeURIComponent(
-        query + " cute sticker illustration, white border, transparent background, vector cartoon, 4k"
+        `authentic candid realistic photograph of ${query}, real life photo, realistic lighting, highly detailed 8k photography`
       )}?width=512&height=512&nologo=true&seed=${seed}`
     );
     fallbackIndex++;
@@ -140,14 +167,13 @@ async function convertUrlToStickerBuffer(mediaUrl) {
       timeout: 10000,
       headers: {
         "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         Accept: "image/*,*/*"
       }
     });
 
     fs.writeFileSync(tempInput, Buffer.from(response.data));
 
-    // FFmpeg വഴി WhatsApp-ന്റെ കൃത്യമായ 512x512 WebP ഫോർമാറ്റിലേക്ക് മാറ്റുന്നു
     return await new Promise((resolve) => {
       const animSettings = isGif
         ? "-t 3 -r 15 -loop 0 -vsync 0 -pix_fmt yuva420p"
@@ -162,7 +188,7 @@ async function convertUrlToStickerBuffer(mediaUrl) {
             return resolve(stickerData);
           }
 
-          // സാധാരണ സ്കെയിലിംഗ് ബാക്ക്-അപ്പ് കമാൻഡ്
+          // സാധാരണ ബാക്ക്-അപ്പ് സ്കെയിലിംഗ്
           const fallbackCmd = `ffmpeg -y -i "${tempInput}" -vf "scale=512:512:force_original_aspect_ratio=decrease" -c:v libwebp -q:v 70 "${tempOutput}"`;
           exec(fallbackCmd, (fbErr) => {
             if (!fbErr && fs.existsSync(tempOutput) && fs.statSync(tempOutput).size > 0) {
@@ -192,7 +218,7 @@ Module(
   {
     pattern: "[.]?(websticker|ws|wsticker) ?(.*)",
     fromMe: isFromMe,
-    desc: "Search Google, Pinterest, Reddit & auto-send 5 stickers",
+    desc: "Search real photos, viral memes & send 5 stickers",
     usage: "websticker <query>",
     use: "sticker",
   },
@@ -201,29 +227,28 @@ Module(
 
     if (!query) {
       return await message.sendReply(
-        `╭━━━〔 🎨 *WEB STICKER ENGINE* 〕━━━╮\n` +
+        `╭━━━〔 🖼️ *REAL WEB STICKER* 〕━━━╮\n` +
         `┃ ⚠️ എന്തെങ്കിലും ഒരു വാക്ക് നൽകുക!\n` +
         `┃\n` +
         `┃ 💡 *ഉദാഹരണങ്ങൾ:*\n` +
         `┃ • \`websticker cat meme\`\n` +
-        `┃ • \`websticker mohanlal\`\n` +
-        `┃ • \`websticker shinchan funny\`\n` +
-        `┃ • \`websticker anime aesthetic\`\n` +
+        `┃ • \`websticker mohanlal funny\`\n` +
+        `┃ • \`websticker jagathy troll\`\n` +
+        `┃ • \`websticker dog smile\`\n` +
         `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯`
       );
     }
 
     const waitMsg = await message.sendReply(
-      `_🔎 "${query}" ഇന്റർനെറ്റിൽ നിന്ന് തിരഞ്ഞ് 5 സ്റ്റിക്കറുകൾ തയ്യാറാക്കുന്നു... കാത്തിരിക്കൂ..._`
+      `_🔎 "${query}" യഥാർത്ഥ ഫോട്ടോകളും മീമുകളും തിരഞ്ഞ് 5 സ്റ്റിക്കറുകൾ തയ്യാറാക്കുന്നു..._`
     );
 
     try {
-      // 1. മികച്ച 5 മീഡിയ ലിങ്കുകൾ കണ്ടെത്തുന്നു
-      const mediaList = await fetchWebStickerMedia(query, 5);
+      // യഥാർത്ഥ ചിത്രങ്ങളും മീമുകളും ശേഖരിക്കുന്നു
+      const mediaList = await fetchRealStickerMedia(query, 5);
 
       let sentCount = 0;
 
-      // 2. ഓരോ മീഡിയയും ഡൗൺലോഡ് ചെയ്ത് തുടരെ സ്റ്റിക്കറായി അയക്കുന്നു
       for (let i = 0; i < mediaList.length; i++) {
         const itemUrl = mediaList[i];
         const stickerBuffer = await convertUrlToStickerBuffer(itemUrl);
@@ -238,15 +263,13 @@ Module(
               { quoted: i === 0 ? message.data : undefined }
             );
             sentCount++;
-            // വാട്‌സാപ്പ് സ്പാം നിയന്ത്രണം വരാതിരിക്കാൻ ചെറിയൊരു ഇടവേള (500ms)
-            await new Promise((resolve) => setTimeout(resolve, 500));
+            await new Promise((resolve) => setTimeout(resolve, 400));
           } catch (sendErr) {
             console.error("[STICKER SEND ERROR]", sendErr.message);
           }
         }
       }
 
-      // ലോഡിംഗ് മെസ്സേജ് മായ്ക്കുന്നു
       if (waitMsg && waitMsg.key) {
         await message.client.sendMessage(message.jid, { delete: waitMsg.key });
       }
