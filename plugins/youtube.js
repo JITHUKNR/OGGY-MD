@@ -24,15 +24,11 @@ function runCmd(cmd) {
   });
 }
 
-// Clean ?si= and shorts from url
 function cleanYtUrl(url) {
   const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/);
   return match && match[1] ? `https://www.youtube.com/watch?v=${match[1]}` : url;
 }
 
-// -----------------------------------------------------------------
-// 1. FAST API ENGINES (Tries first for 5-sec speed)
-// -----------------------------------------------------------------
 async function fetchFastAudio(youtubeUrl) {
   try {
     const res1 = await axios.get(`https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(youtubeUrl)}`, { timeout: 8000 });
@@ -61,9 +57,6 @@ async function fetchFastVideo(youtubeUrl) {
   throw new Error('APIs failed');
 }
 
-// -----------------------------------------------------------------
-// 2. BULLETPROOF LOCAL FALLBACK ENGINES (Runs if APIs fail)
-// -----------------------------------------------------------------
 async function downloadLocalAudio(url) {
   const timestamp = Date.now();
   let title = "YouTube Audio";
@@ -104,9 +97,6 @@ async function downloadLocalVideo(url) {
   return { path: path.join("/tmp", files[0]), title };
 }
 
-// -----------------------------------------------------------------
-// 3. SMART HELPER CARD
-// -----------------------------------------------------------------
 function getSmartHelperCard(youtubeUrl) {
   return (
     `╭━━━〔 ⚡ *OGGY-MD SMART HELPER* 〕━━━╮\n` +
@@ -127,9 +117,6 @@ function getSmartHelperCard(youtubeUrl) {
   );
 }
 
-// ==========================================
-// 4. MAIN PROCESSOR FUNCTIONS
-// ==========================================
 async function processAudioRequest(message, targetUrl, waitMsg) {
   const cleanUrl = cleanYtUrl(targetUrl);
   let localPath = null;
@@ -137,12 +124,10 @@ async function processAudioRequest(message, targetUrl, waitMsg) {
   let onlineUrl = null;
 
   try {
-    // 1. Try Fast APIs First
     const apiData = await fetchFastAudio(cleanUrl);
     onlineUrl = apiData.audioUrl;
     mediaTitle = apiData.title;
   } catch (apiErr) {
-    // 2. Fallback to robust yt-dlp if API fails
     try {
       if (waitMsg && waitMsg.key) await message.edit('⚡ *Using backup engine, downloading...*', message.jid, waitMsg.key);
       const localData = await downloadLocalAudio(cleanUrl);
@@ -192,10 +177,9 @@ async function processVideoRequest(message, targetUrl, waitMsg) {
   }
 }
 
-
-// ==========================================
-// 5. COMMANDS
-// ==========================================
+// -------------------------------------------------------------
+// COMMANDS (Only triggers if NOT replying to a YouTube link)
+// -------------------------------------------------------------
 Module(
   {
     pattern: "^[.]?(song|play|yta)\\s*(.*)$",
@@ -205,6 +189,11 @@ Module(
     use: "download",
   },
   async (message, match) => {
+    // റിപ്ലൈ ആയിട്ടാണ് വരുന്നതെങ്കിൽ ഈ കമാൻഡ് പ്രവർത്തിക്കില്ല (ലിസണർ നോക്കിക്കോളും)
+    if (message.reply_message && message.reply_message.text && message.reply_message.text.match(YT_REGEX)) {
+      return;
+    }
+
     let query = match[2] ? match[2].trim() : '';
 
     if (!query && message.reply_message?.text) {
@@ -244,7 +233,7 @@ Module(
 
       let listText = `⚡ *OGGY-MD • YOUTUBE SEARCH*\n◆ *Query:* _${query}_\n\n`;
       topItems.forEach((item, index) => {
-        listText += `*${index + 1}. ${item.title}*\n   ⏱️ ${item.timestamp || 'N/A'} • 👁️ ${item.views || 'N/A'} • 👤 _${item.author?.name || 'Artist'}_\n\n`;
+        listText += `*${index + 1}. ${item.title}*\n   ⏱️ ${item.timestamp || 'N/A'} • 👁️ ${formatViews(item.views)} • 👤 _${item.author?.name || 'Artist'}_\n\n`;
       });
       listText += `💡 *Reply to this message with a number (1-10) to download the audio.*`;
 
@@ -265,6 +254,10 @@ Module(
     use: "download",
   },
   async (message, match) => {
+    if (message.reply_message && message.reply_message.text && message.reply_message.text.match(YT_REGEX)) {
+      return;
+    }
+
     let query = match[2] ? match[2].trim() : '';
 
     if (!query && message.reply_message?.text) {
@@ -290,9 +283,9 @@ Module(
   }
 );
 
-// ============================================================
-// 6. INTERACTIVE SMART LISTENER
-// ============================================================
+// -------------------------------------------------------------
+// SMART LISTENER (Handles Reply Song/Video & Search Numbers)
+// -------------------------------------------------------------
 Module(
   {
     on: 'text'
@@ -363,3 +356,10 @@ Module(
     }
   }
 );
+
+function formatViews(views) {
+  if (!views) return 'N/A';
+  if (views >= 1000000) return (views / 1000000).toFixed(1) + "M";
+  if (views >= 1000) return (views / 1000).toFixed(1) + "K";
+  return views.toString();
+}
