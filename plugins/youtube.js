@@ -30,21 +30,21 @@ function cleanYtUrl(url) {
 }
 
 // -----------------------------------------------------------------
-// 1. ULTRA-FAST PARALLEL AUDIO ENGINE
+// 1. ULTRA-FAST PARALLEL AUDIO ENGINE (NEW UNBLOCKED APIs)
 // -----------------------------------------------------------------
 async function fetchFastAudio(youtubeUrl) {
-  const p1 = axios.get(`https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(youtubeUrl)}`, { timeout: 10000 }).then(r => {
-    if (r.data?.data?.dl && r.data.data.dl.startsWith('http')) return { audioUrl: r.data.data.dl, title: r.data.data.title || 'YouTube Audio' };
+  const p1 = axios.get(`https://api.vreden.my.id/api/ytmp3?url=${encodeURIComponent(youtubeUrl)}`, { timeout: 15000 }).then(r => {
+    if (r.data?.result?.download?.url) return { audioUrl: r.data.result.download.url, title: r.data.result.metadata?.title || 'YouTube Audio' };
     throw new Error('P1 Failed');
   });
 
-  const p2 = axios.post('https://cobalt-api.kwiatekm.me/', { url: youtubeUrl, downloadMode: 'audio', audioFormat: 'mp3' }, { headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' }, timeout: 10000 }).then(r => {
-    if (r.data?.url) return { audioUrl: r.data.url, title: 'YouTube Audio' };
+  const p2 = axios.get(`https://api.ryzendesu.vip/api/downloader/ytmp3?url=${encodeURIComponent(youtubeUrl)}`, { timeout: 15000 }).then(r => {
+    if (r.data?.url) return { audioUrl: r.data.url, title: r.data.title || 'YouTube Audio' };
     throw new Error('P2 Failed');
   });
 
-  const p3 = axios.get(`https://api.ryzendesu.vip/api/downloader/ytmp3?url=${encodeURIComponent(youtubeUrl)}`, { timeout: 10000 }).then(r => {
-    if (r.data?.url) return { audioUrl: r.data.url, title: r.data.title || 'YouTube Audio' };
+  const p3 = axios.get(`https://itzpire.com/download/youtube?url=${encodeURIComponent(youtubeUrl)}`, { timeout: 15000 }).then(r => {
+    if (r.data?.data?.download?.mp3) return { audioUrl: r.data.data.download.mp3, title: r.data.data?.title || 'YouTube Audio' };
     throw new Error('P3 Failed');
   });
 
