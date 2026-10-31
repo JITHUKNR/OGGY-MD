@@ -29,34 +29,62 @@ function cleanYtUrl(url) {
   return match && match[1] ? `https://www.youtube.com/watch?v=${match[1]}` : url;
 }
 
+// -----------------------------------------------------------------
+// 1. ULTRA-FAST PARALLEL AUDIO ENGINE (Takes 1-3 seconds)
+// -----------------------------------------------------------------
 async function fetchFastAudio(youtubeUrl) {
-  try {
-    const res1 = await axios.get(`https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(youtubeUrl)}`, { timeout: 8000 });
-    if (res1.data?.data?.dl && res1.data.data.dl.startsWith('http')) return { audioUrl: res1.data.data.dl, title: res1.data.data.title || 'YouTube Audio' };
-  } catch (e) {}
+  // Fire all APIs at the EXACT SAME TIME. The fastest one wins!
+  const p1 = axios.get(`https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(youtubeUrl)}`, { timeout: 8000 }).then(r => {
+    if (r.data?.data?.dl && r.data.data.dl.startsWith('http')) return { audioUrl: r.data.data.dl, title: r.data.data.title || 'YouTube Audio' };
+    throw new Error('P1 Failed');
+  });
+
+  const p2 = axios.post('https://cobalt-api.kwiatekm.me/', { url: youtubeUrl, downloadMode: 'audio', audioFormat: 'mp3' }, { headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' }, timeout: 8000 }).then(r => {
+    if (r.data?.url) return { audioUrl: r.data.url, title: 'YouTube Audio' };
+    throw new Error('P2 Failed');
+  });
+
+  const p3 = axios.get(`https://api.ryzendesu.vip/api/downloader/ytmp3?url=${encodeURIComponent(youtubeUrl)}`, { timeout: 8000 }).then(r => {
+    if (r.data?.url) return { audioUrl: r.data.url, title: r.data.title || 'YouTube Audio' };
+    throw new Error('P3 Failed');
+  });
 
   try {
-    const res2 = await axios.post('https://cobalt-api.kwiatekm.me/', { url: youtubeUrl, downloadMode: 'audio', audioFormat: 'mp3' }, { headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' }, timeout: 8000 });
-    if (res2.data?.url) return { audioUrl: res2.data.url, title: 'YouTube Audio' };
-  } catch (e) {}
-  
-  throw new Error('APIs failed');
+    return await Promise.any([p1, p2, p3]);
+  } catch (e) {
+    throw new Error('All fast APIs failed');
+  }
 }
 
+// -----------------------------------------------------------------
+// 2. ULTRA-FAST PARALLEL VIDEO ENGINE (Takes 1-4 seconds)
+// -----------------------------------------------------------------
 async function fetchFastVideo(youtubeUrl) {
-  try {
-    const res1 = await axios.post('https://cobalt-api.kwiatekm.me/', { url: youtubeUrl, videoQuality: '720', downloadMode: 'auto' }, { headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' }, timeout: 9000 });
-    if (res1.data?.url) return { videoUrl: res1.data.url, title: 'YouTube Video' };
-  } catch (e) {}
+  const p1 = axios.post('https://cobalt-api.kwiatekm.me/', { url: youtubeUrl, videoQuality: '720', downloadMode: 'auto' }, { headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' }, timeout: 9000 }).then(r => {
+    if (r.data?.url) return { videoUrl: r.data.url, title: 'YouTube Video' };
+    throw new Error('P1 Failed');
+  });
+
+  const p2 = axios.get(`https://api.siputzx.my.id/api/d/ytmp4?url=${encodeURIComponent(youtubeUrl)}`, { timeout: 9000 }).then(r => {
+    if (r.data?.data?.dl) return { videoUrl: r.data.data.dl, title: r.data.data.title || 'YouTube Video' };
+    throw new Error('P2 Failed');
+  });
+
+  const p3 = axios.get(`https://api.ryzendesu.vip/api/downloader/ytmp4?url=${encodeURIComponent(youtubeUrl)}`, { timeout: 9000 }).then(r => {
+    if (r.data?.url) return { videoUrl: r.data.url, title: r.data.title || 'YouTube Video' };
+    throw new Error('P3 Failed');
+  });
 
   try {
-    const res2 = await axios.get(`https://api.siputzx.my.id/api/d/ytmp4?url=${encodeURIComponent(youtubeUrl)}`, { timeout: 9000 });
-    if (res2.data?.data?.dl) return { videoUrl: res2.data.data.dl, title: res2.data.data.title || 'YouTube Video' };
-  } catch (e) {}
-
-  throw new Error('APIs failed');
+    return await Promise.any([p1, p2, p3]);
+  } catch (e) {
+    throw new Error('All fast APIs failed');
+  }
 }
 
+// -----------------------------------------------------------------
+// 3. BULLETPROOF LOCAL FALLBACK ENGINES
+// -----------------------------------------------------------------
 async function downloadLocalAudio(url) {
   const timestamp = Date.now();
   let title = "YouTube Audio";
@@ -117,6 +145,9 @@ function getSmartHelperCard(youtubeUrl) {
   );
 }
 
+// -----------------------------------------------------------------
+// 4. MAIN PROCESSOR FUNCTIONS
+// -----------------------------------------------------------------
 async function processAudioRequest(message, targetUrl, waitMsg) {
   const cleanUrl = cleanYtUrl(targetUrl);
   let localPath = null;
@@ -177,38 +208,35 @@ async function processVideoRequest(message, targetUrl, waitMsg) {
   }
 }
 
-// -------------------------------------------------------------
-// COMMANDS (Only triggers if NOT replying to a YouTube link)
-// -------------------------------------------------------------
+// ==========================================
+// 5. UNIFIED COMMANDS (Zero Double Triggers)
+// ==========================================
 Module(
   {
-    pattern: "^[.]?(song|play|yta)\\s*(.*)$",
+    pattern: "^[.]?(song|play|yta)(?:\\s+(.*))?$",
     fromMe: isFromMe,
     desc: "Download high quality audio from YouTube",
     usage: "song <query or link>",
     use: "download",
   },
   async (message, match) => {
-    // റിപ്ലൈ ആയിട്ടാണ് വരുന്നതെങ്കിൽ ഈ കമാൻഡ് പ്രവർത്തിക്കില്ല (ലിസണർ നോക്കിക്കോളും)
-    if (message.reply_message && message.reply_message.text && message.reply_message.text.match(YT_REGEX)) {
-      return;
-    }
-
     let query = match[2] ? match[2].trim() : '';
 
+    // If they just replied to a link, grab it directly!
     if (!query && message.reply_message?.text) {
       const matchUrl = message.reply_message.text.match(YT_REGEX);
       if (matchUrl) query = matchUrl[0];
     }
 
+    // IF STILL NO QUERY: Show the "Missing Input" guide ONLY here
     if (!query) {
       return await message.sendReply(
         `⚡ *OGGY-MD* • ᴍᴜꜱɪᴄ ᴇɴɢɪɴᴇ\n\n✦ *Status:* Missing Input\n✦ *Usage:* \`song <name or link>\`\n\n💡 _You can also simply reply 'song' to any YouTube link!_`
       );
     }
 
+    // Is it a direct link?
     const isDirectLink = query.match(YT_REGEX);
-
     if (isDirectLink) {
       const waitMsg = await message.sendReply('⚡ *Fetching high-quality audio... Please wait...*');
       try {
@@ -221,7 +249,7 @@ Module(
       return;
     }
 
-    // SEARCH
+    // Else it's a Search Query
     const searchWait = await message.sendReply(`🔎 *Searching for "${query}"... Please wait...*`);
     try {
       const sRes = await axios.get(`https://api.siputzx.my.id/api/s/youtube?query=${encodeURIComponent(query)}`, { timeout: 8000 });
@@ -247,17 +275,13 @@ Module(
 
 Module(
   {
-    pattern: "^[.]?(video|ytv|mp4)\\s*(.*)$",
+    pattern: "^[.]?(video|ytv|mp4)(?:\\s+(.*))?$",
     fromMe: isFromMe,
     desc: "Download YouTube video in MP4",
     usage: "video <link or reply to link>",
     use: "download",
   },
   async (message, match) => {
-    if (message.reply_message && message.reply_message.text && message.reply_message.text.match(YT_REGEX)) {
-      return;
-    }
-
     let query = match[2] ? match[2].trim() : '';
 
     if (!query && message.reply_message?.text) {
@@ -284,7 +308,7 @@ Module(
 );
 
 // -------------------------------------------------------------
-// SMART LISTENER (Handles Reply Song/Video & Search Numbers)
+// 6. SMART LISTENER (Handles ONLY Search Numbers & Helpers)
 // -------------------------------------------------------------
 Module(
   {
@@ -316,41 +340,12 @@ Module(
       return;
     }
 
-    // B. SMART HELPER AND REPLY HANDLER
+    // B. SMART HELPER (Shows guide if someone types "help", "download", etc. to a link)
     if (message.reply_message && message.reply_message.text) {
       const replyUrlMatch = message.reply_message.text.match(YT_REGEX);
       if (replyUrlMatch) {
-        const targetUrl = replyUrlMatch[0];
-
-        // 1. Reply with 'song'
-        if (['song', 'audio', 'mp3', 'yta', '.song', '.audio', '.mp3'].includes(cleanLower)) {
-          const waitMsg = await message.sendReply('⚡ *Downloading audio from link...*');
-          try {
-            await processAudioRequest(message, targetUrl, waitMsg);
-            if (waitMsg && waitMsg.key) await message.client.sendMessage(message.jid, { delete: waitMsg.key });
-          } catch (e) {
-            await message.sendReply('❌ *Failed to download audio!*');
-            if (waitMsg && waitMsg.key) await message.client.sendMessage(message.jid, { delete: waitMsg.key });
-          }
-          return;
-        }
-
-        // 2. Reply with 'video'
-        if (['video', 'mp4', 'ytv', '.video', '.mp4'].includes(cleanLower)) {
-          const waitMsg = await message.sendReply('⚡ *Downloading video from link...*');
-          try {
-            await processVideoRequest(message, targetUrl, waitMsg);
-            if (waitMsg && waitMsg.key) await message.client.sendMessage(message.jid, { delete: waitMsg.key });
-          } catch (e) {
-            await message.sendReply('❌ *Failed to download video!*');
-            if (waitMsg && waitMsg.key) await message.client.sendMessage(message.jid, { delete: waitMsg.key });
-          }
-          return;
-        }
-
-        // 3. User types something confusing
         if (['download', 'down', 'dl', 'link', 'help', 'what', 'how'].some(k => cleanLower === k)) {
-          return await message.sendReply(getSmartHelperCard(targetUrl));
+          return await message.sendReply(getSmartHelperCard(replyUrlMatch[0]));
         }
       }
     }
