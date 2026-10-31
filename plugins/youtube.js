@@ -2,7 +2,6 @@ const { Module } = require("../main");
 const botConfig = require("../config");
 const axios = require("axios");
 const fs = require("fs");
-const path = require("path");
 
 const isFromMe = botConfig.MODE === "public" ? false : true;
 
@@ -11,10 +10,6 @@ const ytSearchSessions = {};
 
 // Regex to detect YouTube links
 const YT_REGEX = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i;
-
-// Regex to detect Instagram links
-const INSTA_REGEX = /(?:https?:\/\/)?(?:www\.)?(?:instagram\.com\/(?:p|reel|tv)\/)/i;
-
 
 // -----------------------------------------------------------------
 // 1. ULTRA-FAST MULTI-ENGINE AUDIO DOWNLOADER (< 10 SECONDS)
@@ -73,7 +68,7 @@ async function fetchFastAudio(youtubeUrl) {
 // -----------------------------------------------------------------
 // 2. ULTRA-FAST MULTI-ENGINE VIDEO DOWNLOADER (MP4)
 // -----------------------------------------------------------------
-async function fetchFastVideo(youtubeUrl, quality = '480') {
+async function fetchFastVideo(youtubeUrl, quality = '720') {
   // Engine 1: Cobalt Direct MP4
   try {
     const res1 = await axios.post(
@@ -112,26 +107,7 @@ async function fetchFastVideo(youtubeUrl, quality = '480') {
 }
 
 // -----------------------------------------------------------------
-// 3. FAST INSTAGRAM DOWNLOADER (POSTS/REELS/TV)
-// -----------------------------------------------------------------
-async function fetchInstaMedia(instaUrl) {
-    try {
-        const res = await axios.get(`https://api.siputzx.my.id/api/d/igdl?url=${encodeURIComponent(instaUrl)}`, { timeout: 10000 });
-        const data = res.data?.data;
-        if (data && Array.isArray(data) && data.length > 0) {
-            return {
-                mediaUrl: data[0].url,
-                thumbnail: data[0].thumbnail,
-            };
-        }
-    } catch(e) {}
-    
-    throw new Error("Instagram download failed.");
-}
-
-
-// -----------------------------------------------------------------
-// 4. SMART HELPER CARD FOR UNKNOWN COMMANDS OR MERE LINKS
+// 3. SMART HELPER CARD FOR UNKNOWN COMMANDS
 // -----------------------------------------------------------------
 function getSmartHelperCard(youtubeUrl) {
   return (
@@ -142,29 +118,28 @@ function getSmartHelperCard(youtubeUrl) {
     `┃ reply to it using one of these commands:\n` +
     `┃\n` +
     `┃ 🎵 *To download Audio/MP3:*\n` +
-    `┃ 👉 Reply to the link with: \`song\` or \`.song\`\n` +
-    `┃    *(Or type: \`.song ${youtubeUrl}\`)*\n` +
+    `┃ 👉 Reply to the link with: \`song\`\n` +
+    `┃    *(Or type: \`song ${youtubeUrl}\`)*\n` +
     `┃\n` +
     `┃ 🎬 *To download Video/MP4:*\n` +
-    `┃ 👉 Reply to the link with: \`video\` or \`.video\`\n` +
-    `┃    *(Or type: \`.video ${youtubeUrl}\`)*\n` +
+    `┃ 👉 Reply to the link with: \`video\`\n` +
+    `┃    *(Or type: \`video ${youtubeUrl}\`)*\n` +
     `┃\n` +
     `┃ 📌 *Pro Tip:*\n` +
-    `┃ You don't need the '.' prefix when replying.\n` +
-    `┃ Just swipe the link and type \`song\`!\n` +
+    `┃ Just swipe the link and type \`song\` or \`video\`!\n` +
     `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯`
   );
 }
 
 // ==========================================
-// 5. SONG COMMAND (HANDLES YOUTUBE SEARCH & LINKS)
+// 4. SONG COMMAND (HANDLES YOUTUBE SEARCH & LINKS)
 // ==========================================
 Module(
   {
     pattern: "^[.]?(song|play|yta)\\s*(.*)$",
     fromMe: isFromMe,
     desc: "Download high quality audio from YouTube",
-    usage: ".song <query or link>",
+    usage: "song <query or link>",
     use: "download",
   },
   async (message, match) => {
@@ -181,22 +156,16 @@ Module(
       return await message.sendReply(
         `⚡ *OGGY-MD* • ᴍᴜꜱɪᴄ ᴇɴɢɪɴᴇ\n\n` +
         `✦ *Status:* Missing Input\n` +
-        `✦ *Usage:* \`.song <name or link>\`\n\n` +
+        `✦ *Usage:* \`song <name or link>\`\n\n` +
         `◈ *Examples:*\n` +
-        `• \`.song Faded Alan Walker\`\n` +
-        `• \`.song https://youtu.be/... \`\n\n`+
+        `• \`song Faded Alan Walker\`\n` +
+        `• \`song https://youtu.be/... \`\n\n`+
         `💡 _You can also simply reply 'song' to any YouTube link!_`
       );
     }
 
     // Direct YouTube Link Detection
     const isDirectLink = query.match(YT_REGEX);
-    
-    // Direct Instagram Link Detection (Just a heads up for users)
-    const isInstaLink = query.match(INSTA_REGEX);
-    if(isInstaLink) {
-         return await message.sendReply(`⚡ *OGGY-MD Alert:* To download Instagram media, please use the \`.ig\` or \`.insta\` command!`);
-    }
 
     // CASE A: IT IS A DIRECT LINK
     if (isDirectLink) {
@@ -269,14 +238,14 @@ Module(
 );
 
 // ==========================================
-// 6. VIDEO COMMAND
+// 5. VIDEO COMMAND
 // ==========================================
 Module(
   {
     pattern: "^[.]?(video|ytv|mp4)\\s*(.*)$",
     fromMe: isFromMe,
     desc: "Download YouTube video in MP4",
-    usage: ".video <link or reply to link>",
+    usage: "video <link or reply to link>",
     use: "download",
   },
   async (message, match) => {
@@ -291,10 +260,10 @@ Module(
       return await message.sendReply(
         `╭━━━〔 🎬 *VIDEO DOWNLOADER* 〕━━━╮\n` +
         `┃ ⚠️ Please provide a YouTube link or\n` +
-        `┃ reply to a link with \`.video\`!\n` +
+        `┃ reply to a link with \`video\`!\n` +
         `┃\n` +
         `┃ 💡 *Example:*\n` +
-        `┃ \`.video https://youtu.be/... \`\n` +
+        `┃ \`video https://youtu.be/... \`\n` +
         `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯`
       );
     }
@@ -307,7 +276,7 @@ Module(
     const waitMsg = await message.sendReply('⚡ *Downloading video... Please wait...*');
 
     try {
-      const vid = await fetchFastVideo(isDirectLink[0], '720'); // Tries 720p first, falls back in API
+      const vid = await fetchFastVideo(isDirectLink[0], '720'); 
       await message.client.sendMessage(
         message.jid,
         {
@@ -328,60 +297,8 @@ Module(
   }
 );
 
-// ==========================================
-// 7. INSTAGRAM DOWNLOADER
-// ==========================================
-Module(
-  {
-    pattern: "^[.]?(ig|insta|instagram)\\s*(.*)$",
-    fromMe: isFromMe,
-    desc: "Download Instagram Reels and Posts",
-    usage: ".ig <link>",
-    use: "download",
-  },
-  async (message, match) => {
-    let query = match[2] ? match[2].trim() : '';
-
-    if (!query && message.reply_message?.text) {
-      const matchUrl = message.reply_message.text.match(INSTA_REGEX);
-      if (matchUrl) query = matchUrl[0];
-    }
-
-    if (!query) {
-       return await message.sendReply(`⚡ *OGGY-MD Alert:* Please provide a valid Instagram link. Example: \`.ig https://instagram.com/reel/...\``);
-    }
-    
-    const isDirectLink = query.match(INSTA_REGEX);
-    if(!isDirectLink) {
-        return await message.sendReply(`❌ Please provide a valid Instagram link.`);
-    }
-
-    const waitMsg = await message.sendReply('⚡ *Fetching Instagram media...*');
-
-    try {
-      const media = await fetchInstaMedia(isDirectLink[0]);
-      
-      // Determine if it's video or image based on URL extension (very basic check, siputzx usually returns video)
-      if (media.mediaUrl.includes('.mp4')) {
-           await message.client.sendMessage(message.jid, { video: { url: media.mediaUrl }, caption: `⚡ *Downloaded by OGGY-MD*` }, { quoted: message.data });
-      } else {
-           await message.client.sendMessage(message.jid, { image: { url: media.mediaUrl }, caption: `⚡ *Downloaded by OGGY-MD*` }, { quoted: message.data });
-      }
-      
-      if (waitMsg && waitMsg.key) {
-        await message.client.sendMessage(message.jid, { delete: waitMsg.key });
-      }
-    } catch (e) {
-      await message.sendReply('❌ *Download failed!* Ensure the account is public.');
-      if (waitMsg && waitMsg.key) {
-          await message.client.sendMessage(message.jid, { delete: waitMsg.key });
-      }
-    }
-  }
-);
-
 // ============================================================
-// 8. INTERACTIVE SMART LISTENER (NUMBER CHOICES & CONTEXT REPLIES)
+// 6. INTERACTIVE SMART LISTENER (NUMBER CHOICES & CONTEXT REPLIES)
 // ============================================================
 Module(
   {
@@ -406,7 +323,7 @@ Module(
     if (isReplyToList && !isNaN(pickedNumber) && pickedNumber >= 1 && pickedNumber <= 10) {
       const session = ytSearchSessions[message.jid];
       if (!session || !session.results) {
-        return await message.sendReply('⚠️ *Session Expired:* Please search again using `.song <query>`.');
+        return await message.sendReply('⚠️ *Session Expired:* Please search again using `song <query>`.');
       }
 
       const selectedTrack = session.results[pickedNumber - 1];
@@ -453,7 +370,7 @@ Module(
     }
 
     // ---------------------------------------------------------
-    // B. SMART LINK REPLIES & HELPER
+    // B. SMART HELPER FOR CONFUSING WORDS
     // ---------------------------------------------------------
     if (message.reply_message && message.reply_message.text) {
       const replyUrlMatch = message.reply_message.text.match(YT_REGEX);
@@ -461,65 +378,10 @@ Module(
       if (replyUrlMatch) {
         const targetUrl = replyUrlMatch[0];
 
-        // 1. Reply with 'song', 'audio', 'mp3' -> Downloads Audio
-        if (['song', 'audio', 'mp3', 'yta', '.song', '.audio', '.mp3'].includes(cleanLower)) {
-          const waitMsg = await message.sendReply('⚡ *Downloading audio from link...*');
-          try {
-            const audio = await fetchFastAudio(targetUrl);
-            await message.client.sendMessage(
-              message.jid,
-              {
-                audio: { url: audio.audioUrl },
-                mimetype: 'audio/mp4',
-                fileName: `${(audio.title || 'song').replace(/[\\/:*?"<>|]/g, "").substring(0, 50).trim()}.m4a`
-              },
-              { quoted: message.data }
-            );
-            if (waitMsg && waitMsg.key) await message.client.sendMessage(message.jid, { delete: waitMsg.key });
-          } catch (e) {
-            await message.sendReply('❌ *Failed to download audio!*');
-            if (waitMsg && waitMsg.key) await message.client.sendMessage(message.jid, { delete: waitMsg.key });
-          }
-          return;
-        }
-
-        // 2. Reply with 'video', 'mp4', 'ytv' -> Downloads Video
-        if (['video', 'mp4', 'ytv', '.video', '.mp4'].includes(cleanLower)) {
-          const waitMsg = await message.sendReply('⚡ *Downloading video from link...*');
-          try {
-            const vid = await fetchFastVideo(targetUrl, '720');
-            await message.client.sendMessage(
-              message.jid,
-              {
-                video: { url: vid.videoUrl },
-                caption: `🎬 *${vid.title}*`
-              },
-              { quoted: message.data }
-            );
-            if (waitMsg && waitMsg.key) await message.client.sendMessage(message.jid, { delete: waitMsg.key });
-          } catch (e) {
-            await message.sendReply('❌ *Failed to download video!*');
-            if (waitMsg && waitMsg.key) await message.client.sendMessage(message.jid, { delete: waitMsg.key });
-          }
-          return;
-        }
-
-        // 3. User types something confusing -> Show Smart Guide
-        if (['download', 'down', 'dl', 'link', 'help', 'what', 'how'].some(k => cleanLower.includes(k))) {
+        // User types something confusing -> Show Smart Guide (Double trigger fixed: 'song' & 'video' are handled by main modules)
+        if (['download', 'down', 'dl', 'link', 'help', 'what', 'how'].some(k => cleanLower === k)) {
           return await message.sendReply(getSmartHelperCard(targetUrl));
         }
-      }
-    }
-
-    // ---------------------------------------------------------
-    // C. MERE LINK DETECTION (NO COMMAND)
-    // ---------------------------------------------------------
-    if (!rawText.startsWith('.') && !rawText.startsWith('!')) {
-      const soloUrlMatch = rawText.match(YT_REGEX);
-      // Only show helper if it's just a link (short message)
-      if (soloUrlMatch && rawText.length < 150) {
-        // Option to silent it later if it gets annoying, but useful for now
-        // return await message.sendReply(getSmartHelperCard(soloUrlMatch[0]));
       }
     }
   }
