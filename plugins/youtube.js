@@ -82,7 +82,7 @@ async function fetchFastVideo(youtubeUrl) {
 }
 
 // -----------------------------------------------------------------
-// 3. BULLETPROOF LOCAL FALLBACK ENGINES
+// 3. BULLETPROOF LOCAL FALLBACK ENGINES (NO FFMPEG - SUPER FAST)
 // -----------------------------------------------------------------
 async function downloadLocalAudio(url) {
   const timestamp = Date.now();
@@ -92,18 +92,15 @@ async function downloadLocalAudio(url) {
     if (meta) title = meta.split("\n")[0].trim();
   } catch (e) { title = `audio_${timestamp}`; }
 
-  const outTemplate = path.join("/tmp", `yt_raw_${timestamp}.%(ext)s`);
-  const m4aPath = path.join("/tmp", `yt_final_${timestamp}.m4a`);
+  const m4aPath = path.join("/tmp", `yt_audio_${timestamp}.m4a`);
 
-  await runCmd(`yt-dlp ${YT_FLAGS} -f "ba/b" --no-playlist -o "${outTemplate}" "${url}" --force-overwrites`);
-  const files = fs.readdirSync("/tmp").filter((f) => f.startsWith(`yt_raw_${timestamp}`));
+  // Directly download YouTube's native m4a format (No ffmpeg conversion needed)
+  await runCmd(`yt-dlp ${YT_FLAGS} -f "ba[ext=m4a]/b[ext=m4a]/ba" --no-playlist -o "${m4aPath}" "${url}" --force-overwrites`);
+  
+  const files = fs.readdirSync("/tmp").filter((f) => f.startsWith(`yt_audio_${timestamp}`));
   if (files.length === 0) throw new Error("Fallback failed");
 
-  const rawPath = path.join("/tmp", files[0]);
-  await runCmd(`ffmpeg -i "${rawPath}" -vn -c:a aac -b:a 192k "${m4aPath}" -y`);
-  try { fs.unlinkSync(rawPath); } catch (e) {}
-
-  return { path: m4aPath, title };
+  return { path: path.join("/tmp", files[0]), title };
 }
 
 async function downloadLocalVideo(url) {
@@ -114,10 +111,11 @@ async function downloadLocalVideo(url) {
     if (t) title = t.split("\n")[0].trim();
   } catch (e) { title = `video_${timestamp}`; }
 
-  const outTemplate = path.join("/tmp", `yt_vid_${timestamp}.%(ext)s`);
-  const formatSelector = `b[height<=720][ext=mp4]/bv*[height<=720][ext=mp4]+ba*[ext=m4a]/b[height<=720]/bv*+ba/b`;
+  const outPath = path.join("/tmp", `yt_vid_${timestamp}.mp4`);
   
-  await runCmd(`yt-dlp ${YT_FLAGS} -f "${formatSelector}" --merge-output-format mp4 --no-playlist -o "${outTemplate}" "${url}" --force-overwrites`);
+  // Directly download pre-merged mp4 (No ffmpeg merging needed)
+  await runCmd(`yt-dlp ${YT_FLAGS} -f "b[ext=mp4][height<=720]/b[height<=720]/b" --no-playlist -o "${outPath}" "${url}" --force-overwrites`);
+  
   const files = fs.readdirSync("/tmp").filter((f) => f.startsWith(`yt_vid_${timestamp}`));
   if (files.length === 0) throw new Error("Fallback failed");
 
