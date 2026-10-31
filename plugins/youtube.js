@@ -17,7 +17,7 @@ const YT_FLAGS = `--cookies "${COOKIE_PATH}" --extractor-args "youtube:player_cl
 
 function runCmd(cmd) {
   return new Promise((resolve, reject) => {
-    exec(cmd, { maxBuffer: 1024 * 1024 * 100 }, (error, stdout, stderr) => {
+    exec(cmd, { maxBuffer: 1024 * 1024 * 100, timeout: 60000 }, (error, stdout, stderr) => {
       if (error) return reject(stderr || error.message);
       resolve(stdout ? stdout.trim() : "");
     });
