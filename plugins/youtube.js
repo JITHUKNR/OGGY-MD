@@ -13,7 +13,8 @@ const YT_REGEX = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts
 
 // VPS Cookies for yt-dlp fallback
 const COOKIE_PATH = "/root/RAGANORK-BOT/cookies.txt";
-const YT_FLAGS = `--cookies "${COOKIE_PATH}" --extractor-args "youtube:player_client=mweb,web"`;
+// Added geo-bypass and force-ipv4 to bypass YouTube IP blocks
+const YT_FLAGS = `--cookies "${COOKIE_PATH}" --geo-bypass --force-ipv4 --extractor-args "youtube:player_client=mweb,web"`;
 
 function runCmd(cmd) {
   return new Promise((resolve, reject) => {
@@ -30,55 +31,41 @@ function cleanYtUrl(url) {
 }
 
 // -----------------------------------------------------------------
-// 1. ULTRA-FAST PARALLEL AUDIO ENGINE (NEW UNBLOCKED APIs)
+// 1. ULTRA-FAST PARALLEL AUDIO ENGINE (NEW PREMIUM APIs)
 // -----------------------------------------------------------------
 async function fetchFastAudio(youtubeUrl) {
-  const p1 = axios.get(`https://api.vreden.my.id/api/ytmp3?url=${encodeURIComponent(youtubeUrl)}`, { timeout: 15000 }).then(r => {
-    if (r.data?.result?.download?.url) return { audioUrl: r.data.result.download.url, title: r.data.result.metadata?.title || 'YouTube Audio' };
-    throw new Error('P1 Failed');
+  const p1 = axios.get(`https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(youtubeUrl)}`, { timeout: 8000 }).then(r => {
+    if (r.data?.data?.dl) return { audioUrl: r.data.data.dl, title: r.data.data.title || 'YouTube Audio' };
+    throw new Error('P1');
   });
-
-  const p2 = axios.get(`https://api.ryzendesu.vip/api/downloader/ytmp3?url=${encodeURIComponent(youtubeUrl)}`, { timeout: 15000 }).then(r => {
+  const p2 = axios.get(`https://api.ryzendesu.vip/api/downloader/ytmp3?url=${encodeURIComponent(youtubeUrl)}`, { timeout: 8000 }).then(r => {
     if (r.data?.url) return { audioUrl: r.data.url, title: r.data.title || 'YouTube Audio' };
-    throw new Error('P2 Failed');
+    throw new Error('P2');
   });
-
-  const p3 = axios.get(`https://itzpire.com/download/youtube?url=${encodeURIComponent(youtubeUrl)}`, { timeout: 15000 }).then(r => {
-    if (r.data?.data?.download?.mp3) return { audioUrl: r.data.data.download.mp3, title: r.data.data?.title || 'YouTube Audio' };
-    throw new Error('P3 Failed');
+  const p3 = axios.get(`https://api.vreden.my.id/api/ytmp3?url=${encodeURIComponent(youtubeUrl)}`, { timeout: 8000 }).then(r => {
+    if (r.data?.result?.download?.url) return { audioUrl: r.data.result.download.url, title: r.data.result.metadata?.title || 'YouTube Audio' };
+    throw new Error('P3');
   });
-
-  try {
-    return await Promise.any([p1, p2, p3]);
-  } catch (e) {
-    throw new Error('All fast APIs failed');
-  }
+  try { return await Promise.any([p1, p2, p3]); } catch (e) { throw new Error('APIs failed'); }
 }
 
 // -----------------------------------------------------------------
-// 2. ULTRA-FAST PARALLEL VIDEO ENGINE
+// 2. ULTRA-FAST PARALLEL VIDEO ENGINE (NEW PREMIUM APIs)
 // -----------------------------------------------------------------
 async function fetchFastVideo(youtubeUrl) {
-  const p1 = axios.post('https://cobalt-api.kwiatekm.me/', { url: youtubeUrl, videoQuality: '720', downloadMode: 'auto' }, { headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' }, timeout: 12000 }).then(r => {
-    if (r.data?.url) return { videoUrl: r.data.url, title: 'YouTube Video' };
-    throw new Error('P1 Failed');
-  });
-
-  const p2 = axios.get(`https://api.siputzx.my.id/api/d/ytmp4?url=${encodeURIComponent(youtubeUrl)}`, { timeout: 12000 }).then(r => {
+  const p1 = axios.get(`https://api.siputzx.my.id/api/d/ytmp4?url=${encodeURIComponent(youtubeUrl)}`, { timeout: 8000 }).then(r => {
     if (r.data?.data?.dl) return { videoUrl: r.data.data.dl, title: r.data.data.title || 'YouTube Video' };
-    throw new Error('P2 Failed');
+    throw new Error('P1');
   });
-
-  const p3 = axios.get(`https://api.ryzendesu.vip/api/downloader/ytmp4?url=${encodeURIComponent(youtubeUrl)}`, { timeout: 12000 }).then(r => {
+  const p2 = axios.get(`https://api.ryzendesu.vip/api/downloader/ytmp4?url=${encodeURIComponent(youtubeUrl)}`, { timeout: 8000 }).then(r => {
     if (r.data?.url) return { videoUrl: r.data.url, title: r.data.title || 'YouTube Video' };
-    throw new Error('P3 Failed');
+    throw new Error('P2');
   });
-
-  try {
-    return await Promise.any([p1, p2, p3]);
-  } catch (e) {
-    throw new Error('All fast APIs failed');
-  }
+  const p3 = axios.get(`https://api.vreden.my.id/api/ytv?url=${encodeURIComponent(youtubeUrl)}`, { timeout: 8000 }).then(r => {
+    if (r.data?.result?.download?.url) return { videoUrl: r.data.result.download.url, title: r.data.result.metadata?.title || 'YouTube Video' };
+    throw new Error('P3');
+  });
+  try { return await Promise.any([p1, p2, p3]); } catch (e) { throw new Error('APIs failed'); }
 }
 
 // -----------------------------------------------------------------
