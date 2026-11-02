@@ -34,6 +34,22 @@ const getPlatform = (url) => {
     return 'unknown';
 };
 
+// --- SECURE BUFFER FETCHER ---
+const getBuffer = async (url) => {
+    try {
+        const res = await axios.get(url, {
+            responseType: 'arraybuffer',
+            headers: { 
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8'
+            }
+        });
+        return Buffer.from(res.data, 'binary');
+    } catch (error) {
+        throw new Error("Failed to fetch media buffer. IG might have blocked the link.");
+    }
+};
+
 // --- ADVANCED DOWNLOAD ENGINE ---
 async function downloadMedia(url, platform, type) {
     let result = { media: [], caption: "", type: "video", title: "" };
@@ -50,38 +66,29 @@ async function downloadMedia(url, platform, type) {
         }
 
         if (platform === 'instagram') {
-            // Remove tracking parameters from IG link
             const cleanUrl = url.split('?')[0]; 
             
-            // Backup 1: Siputzx
+            // Primary API: Vreden
             try {
-                const res = await axios.get(`https://api.siputzx.my.id/api/d/igdl?url=${encodeURIComponent(cleanUrl)}`, { timeout: 8000 });
-                let data = res.data.data;
-                if (Array.isArray(data)) result.media = data.map(item => item.url || item);
-                else if (data.url) result.media = [data.url];
-                result.caption = res.data.caption || "";
+                const res = await axios.get(`https://api.vreden.my.id/api/igdownload?url=${encodeURIComponent(cleanUrl)}`, { timeout: 8000 });
+                let data = res.data.result;
+                if (data.medias && Array.isArray(data.medias)) result.media = data.medias.map(m => m.url);
+                else if (Array.isArray(data)) result.media = data.map(m => m.url || m);
+                result.caption = data.caption || data.title || "";
+                if (result.media.length > 0) return result;
+            } catch(e) {}
+            
+            // Backup API: Siputzx
+            try {
+                const res2 = await axios.get(`https://api.siputzx.my.id/api/d/igdl?url=${encodeURIComponent(cleanUrl)}`, { timeout: 8000 });
+                let data2 = res2.data.data;
+                if (Array.isArray(data2)) result.media = data2.map(item => item.url || item);
+                else if (data2.url) result.media = [data2.url];
+                result.caption = res2.data.caption || "";
                 if (result.media.length > 0) return result;
             } catch(e) {}
 
-            // Backup 2: Vreden
-            try {
-                const res2 = await axios.get(`https://api.vreden.my.id/api/igdownload?url=${encodeURIComponent(cleanUrl)}`, { timeout: 8000 });
-                let data2 = res2.data.result;
-                if (data2.medias && Array.isArray(data2.medias)) result.media = data2.medias.map(m => m.url);
-                else if (Array.isArray(data2)) result.media = data2.map(m => m.url || m);
-                result.caption = data2.caption || data2.title || "";
-                if (result.media.length > 0) return result;
-            } catch(e) {}
-            
-            // Backup 3: Ryzendesu
-            try {
-                const res3 = await axios.get(`https://api.ryzendesu.vip/api/downloader/igdl?url=${encodeURIComponent(cleanUrl)}`, { timeout: 8000 });
-                let data3 = res3.data.data;
-                if (Array.isArray(data3)) result.media = data3.map(m => m.url);
-                if (result.media.length > 0) return result;
-            } catch(e) {}
-            
-            throw new Error("IG APIs Failed");
+            throw new Error("IG APIs Failed to extract link.");
         }
 
         if (platform === 'spotify') {
@@ -94,7 +101,6 @@ async function downloadMedia(url, platform, type) {
             return { media: [res.data.data.url], type: 'image', caption: "📌 Pinterest Download" };
         }
 
-        // Universal Downloader (Facebook, Twitter, TikTok, Snapchat)
         const res = await axios.get(`https://api.siputzx.my.id/api/d/alldl?url=${encodeURIComponent(url)}`);
         if (res.data && res.data.data) {
             let data = res.data.data;
@@ -112,9 +118,9 @@ async function downloadMedia(url, platform, type) {
             return result;
         }
     } catch (e) {
-        throw new Error("API Error");
+        throw new Error(e.message || "Unsupported or broken link.");
     }
-    throw new Error("Unsupported Platform");
+    throw new Error("Platform not supported.");
 }
 
 // --- ALL-IN-ONE SMART HANDLER ---
@@ -135,9 +141,7 @@ Module(
     }
     
     const targetUrl = extractUrl(query);
-    if (!targetUrl) {
-        return await message.sendReply(`❌ *Usage:* \`.${cmd} <link>\``);
-    }
+    if (!targetUrl) return await message.sendReply(`❌ *Usage:* \`.${cmd} <link>\``);
 
     const platform = getPlatform(targetUrl);
     if (platform === 'unknown') return await message.sendReply("❌ Unsupported link format.");
@@ -146,7 +150,7 @@ Module(
     if (['song', 'play', 'mp3', 'audio'].includes(cmd)) reqType = 'audio';
     if (['photo', 'pic', 'image'].includes(cmd)) reqType = 'image';
 
-    const waitMsg = await message.sendReply(`⚡ *Processing request...*`);
+    const waitMsg = await message.sendReply(`⚡ *Processing request securely...*`);
 
     try {
         const data = await downloadMedia(targetUrl, platform, reqType);
@@ -156,21 +160,25 @@ Module(
 
         for (let i = 0; i < data.media.length; i++) {
             let mUrl = data.media[i];
+            if (!mUrl) continue;
             
-            if (reqType === 'audio' || (platform === 'spotify')) {
+            // Bypass security blocks by fetching buffer directly
+            const mediaBuffer = await getBuffer(mUrl);
+
+            if (reqType === 'audio' || platform === 'spotify') {
                 if (i === 0) {
                     await message.client.sendMessage(message.jid, {
-                        audio: { url: mUrl },
-                        mimetype: 'audio/mpeg',
-                        fileName: data.title ? `${data.title}.mp3` : `audio.mp3`
+                        audio: mediaBuffer,
+                        mimetype: 'audio/mp4',
+                        ptt: false
                     }, { quoted: message.data });
                 }
                 continue;
             }
 
             let msgObj = {};
-            if (mUrl.includes('.mp4') || data.type === 'video') msgObj.video = { url: mUrl };
-            else msgObj.image = { url: mUrl };
+            if (mUrl.includes('.mp4') || data.type === 'video') msgObj.video = mediaBuffer;
+            else msgObj.image = mediaBuffer;
             
             if (i === 0) msgObj.caption = captionText;
 
@@ -180,7 +188,8 @@ Module(
         if (waitMsg && waitMsg.key) await message.client.sendMessage(message.jid, { delete: waitMsg.key });
 
     } catch (err) {
-        await message.sendReply(`❌ *Download failed:* Please check if the link is valid and public.`);
+        // Now it will print the EXACT error instead of a generic message
+        await message.sendReply(`❌ *Error:* ${err.message}`);
         if (waitMsg && waitMsg.key) await message.client.sendMessage(message.jid, { delete: waitMsg.key });
     }
   }
