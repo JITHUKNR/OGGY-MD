@@ -50,13 +50,38 @@ async function downloadMedia(url, platform, type) {
         }
 
         if (platform === 'instagram') {
-            const res = await axios.get(`https://api.siputzx.my.id/api/d/igdl?url=${encodeURIComponent(url)}`);
-            let data = res.data.data;
-            if (Array.isArray(data)) result.media = data.map(item => item.url || item);
-            else if (data.url) result.media = [data.url];
-            result.caption = res.data.caption || "";
-            result.type = type === 'audio' ? 'audio' : 'mixed'; 
-            return result;
+            // Remove tracking parameters from IG link
+            const cleanUrl = url.split('?')[0]; 
+            
+            // Backup 1: Siputzx
+            try {
+                const res = await axios.get(`https://api.siputzx.my.id/api/d/igdl?url=${encodeURIComponent(cleanUrl)}`, { timeout: 8000 });
+                let data = res.data.data;
+                if (Array.isArray(data)) result.media = data.map(item => item.url || item);
+                else if (data.url) result.media = [data.url];
+                result.caption = res.data.caption || "";
+                if (result.media.length > 0) return result;
+            } catch(e) {}
+
+            // Backup 2: Vreden
+            try {
+                const res2 = await axios.get(`https://api.vreden.my.id/api/igdownload?url=${encodeURIComponent(cleanUrl)}`, { timeout: 8000 });
+                let data2 = res2.data.result;
+                if (data2.medias && Array.isArray(data2.medias)) result.media = data2.medias.map(m => m.url);
+                else if (Array.isArray(data2)) result.media = data2.map(m => m.url || m);
+                result.caption = data2.caption || data2.title || "";
+                if (result.media.length > 0) return result;
+            } catch(e) {}
+            
+            // Backup 3: Ryzendesu
+            try {
+                const res3 = await axios.get(`https://api.ryzendesu.vip/api/downloader/igdl?url=${encodeURIComponent(cleanUrl)}`, { timeout: 8000 });
+                let data3 = res3.data.data;
+                if (Array.isArray(data3)) result.media = data3.map(m => m.url);
+                if (result.media.length > 0) return result;
+            } catch(e) {}
+            
+            throw new Error("IG APIs Failed");
         }
 
         if (platform === 'spotify') {
@@ -87,7 +112,7 @@ async function downloadMedia(url, platform, type) {
             return result;
         }
     } catch (e) {
-        throw new Error("API Blocked or Invalid Link");
+        throw new Error("API Error");
     }
     throw new Error("Unsupported Platform");
 }
@@ -97,7 +122,7 @@ Module(
   {
     pattern: "^[.]?(song|video|photo|play|mp3|mp4|pic)(?:\\s+(.*))?$",
     fromMe: isFromMe,
-    desc: "All-in-One Social Media Downloader (YT, IG, FB, X, TikTok, Spotify, Pin, Snap)",
+    desc: "All-in-One Social Media Downloader",
     usage: "song/video/photo <link>",
     use: "download",
   },
@@ -105,26 +130,13 @@ Module(
     const cmd = match[1].toLowerCase();
     let query = match[2] ? match[2].trim() : '';
     
-    // Check reply message for links if query is empty
     if (!query && message.reply_message?.text) {
         query = message.reply_message.text.trim();
     }
     
     const targetUrl = extractUrl(query);
     if (!targetUrl) {
-        return await message.sendReply(
-            `╭━━━〔 🌐 *SOCIAL MEDIA JS* 〕━━━╮\n` +
-            `┃ ⚠️ *Usage:* \`.${cmd} <link>\`\n` +
-            `┃\n` +
-            `┃ ✨ *Supported Platforms:*\n` +
-            `┃ 🔴 YouTube  📸 Instagram\n` +
-            `┃ 🔵 Facebook 🐦 Twitter (X)\n` +
-            `┃ 🎵 TikTok   🟢 Spotify\n` +
-            `┃ 📌 Pinterest 👻 Snapchat\n` +
-            `┃\n` +
-            `┃ 💡 _Just reply to any link with song, video, or photo!_\n` +
-            `╰━━━━━━━━━━━━━━━━━━━━━━━╯`
-        );
+        return await message.sendReply(`❌ *Usage:* \`.${cmd} <link>\``);
     }
 
     const platform = getPlatform(targetUrl);
@@ -134,7 +146,7 @@ Module(
     if (['song', 'play', 'mp3', 'audio'].includes(cmd)) reqType = 'audio';
     if (['photo', 'pic', 'image'].includes(cmd)) reqType = 'image';
 
-    const waitMsg = await message.sendReply(`⚡ *Processing ${platform.toUpperCase()} request... Please wait...*`);
+    const waitMsg = await message.sendReply(`⚡ *Processing request...*`);
 
     try {
         const data = await downloadMedia(targetUrl, platform, reqType);
@@ -145,7 +157,7 @@ Module(
         for (let i = 0; i < data.media.length; i++) {
             let mUrl = data.media[i];
             
-            if (reqType === 'audio' || data.type === 'audio') {
+            if (reqType === 'audio' || (platform === 'spotify')) {
                 if (i === 0) {
                     await message.client.sendMessage(message.jid, {
                         audio: { url: mUrl },
@@ -185,9 +197,7 @@ Module({ on: 'text' }, async (message) => {
             const platform = getPlatform(targetUrl);
             if (platform !== 'unknown') {
                 if (['song', 'video', 'photo', 'all'].includes(text)) {
-                    // Force the bot to trigger the command logic
                     message.text = `.${text} ${targetUrl}`;
-                    // The core framework will handle the rest based on our command pattern above
                 }
             }
         }
