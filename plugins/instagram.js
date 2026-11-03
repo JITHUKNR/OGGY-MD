@@ -5,7 +5,8 @@ const axios = require("axios");
 const isFromMe = botConfig.MODE === "public" ? false : true;
 
 // Instagram URL Regex
-const IG_REGEX = /(?:https?:\/\/)?(?:www\.)?(?:instagram\.com|instagr\.am)\/(?:p|reel|tv|stories|audio)\/[a-zA-Z0-9_-]+/i;
+// Updated Regex for Reels, Stories, and Highlights
+const IG_REGEX = /(?:https?:\/\/)?(?:www\.)?(?:instagram\.com|instagr\.am)\/(?:p|reel|tv|stories|s|audio|highlights)\/[^\s?]+/i;
 
 const extractUrl = (text) => {
   if (!text) return null;
@@ -112,35 +113,32 @@ async function processInstagram(message, cmd, targetUrl) {
   }
 }
 
-// --- 1. COMMAND HANDLER (.ig, .reel, .photo, .video, .song) ---
+// --- 1. COMMAND HANDLER (.ig, .reel, .photo, .video, .song, .story) ---
 Module(
   {
-    pattern: "^[.]?(ig|insta|reel|song|video|photo|pic|mp3|mp4)(?:\\s+(.*))?$",
+    pattern: "^[.]?(ig|insta|reel|song|video|photo|pic|mp3|mp4|story)(?:\\s+(.*))?$",
     fromMe: isFromMe,
-    desc: "Download High Quality Instagram Reels & Carousel Posts",
+    desc: "Download High Quality Instagram Reels, Stories & Carousel Posts",
     use: "download",
   },
   async (message, match) => {
     const cmd = match[1].toLowerCase();
     let query = match[2] ? match[2].trim() : "";
 
-    // Check reply message if query is empty
     if (!query) query = getReplyText(message).trim();
-    
-    // Ignore YouTube links (youtube.js will handle them)
     if (query.includes('youtu')) return;
 
     const targetUrl = extractUrl(query);
 
     if (!targetUrl) {
-      // Show menu only if they specifically typed .ig or .insta without a link
-      if (['ig', 'insta', 'reel'].includes(cmd)) {
+      if (['ig', 'insta', 'reel', 'story'].includes(cmd)) {
         return await message.sendReply(
           `╭━━━〔 📸 *OGGY-MD INSTAGRAM* 〕━━━╮\n` +
           `┃ 📌 *Reply to any IG link with:*\n` +
           `┃ • \`song\` - For Reel Audio\n` +
           `┃ • \`video\` - For Reels/Video\n` +
           `┃ • \`photo\` - For Post/Slide Photos\n` +
+          `┃ • \`story\` - For IG Stories\n` +
           `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯`
         );
       }
@@ -156,11 +154,10 @@ Module({ on: 'text', fromMe: isFromMe }, async (message) => {
   if (!message.jid || !message.reply_message) return;
   const text = (message.text || message.message || "").trim().toLowerCase();
   
-  // Trigger only for exact keywords
-  if (['song', 'video', 'photo', 'audio', 'pic'].includes(text)) {
+  // Added 'story' to the trigger words
+  if (['song', 'video', 'photo', 'audio', 'pic', 'story'].includes(text)) {
     const targetUrl = extractUrl(getReplyText(message));
     
-    // Ignore YouTube links here too
     if (targetUrl && !targetUrl.includes('youtu')) {
       await processInstagram(message, text, targetUrl);
     }
