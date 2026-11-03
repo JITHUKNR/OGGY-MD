@@ -5,9 +5,7 @@ const axios = require("axios");
 let scraper = null;
 try {
     scraper = require("ruhend-scraper");
-} catch (e) {
-    console.log("ruhend-scraper not installed, using APIs only.");
-}
+} catch (e) {}
 
 const isFromMe = botConfig.MODE === "public" ? false : true;
 
@@ -41,7 +39,36 @@ const getPlatform = (url) => {
     return 'unknown';
 };
 
-// Clean Instagram URLs to avoid tracking blocks
+// --- Helper: Extract Reply Text Safely in Raganork ---
+const getReplyText = (message) => {
+    if (!message.reply_message) return "";
+    return (
+        message.reply_message.text ||
+        message.reply_message.message ||
+        message.reply_message.caption ||
+        message.reply_message?.data?.message?.conversation ||
+        message.reply_message?.data?.message?.extendedTextMessage?.text ||
+        ""
+    );
+};
+
+// --- Helper: Resolve Facebook / Share Redirect Links ---
+async function resolveRedirectUrl(url) {
+    try {
+        const res = await axios.get(url, {
+            maxRedirects: 5,
+            timeout: 8000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+            }
+        });
+        return res.request?.res?.responseUrl || url;
+    } catch (e) {
+        return e.request?.res?.responseUrl || url;
+    }
+}
+
+// --- Helper: Clean Instagram URLs ---
 const cleanIgUrl = (url) => {
     try {
         const u = new URL(url);
@@ -51,18 +78,26 @@ const cleanIgUrl = (url) => {
     }
 };
 
-// --- MEDIA BUFFER & TYPE DETECTOR ---
+// --- Helper: Clean YouTube URLs ---
+const cleanYtUrl = (url) => {
+    const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/|live\/))([\w-]{11})/);
+    return match && match[1] ? `https://www.youtube.com/watch?v=${match[1]}` : url;
+};
+
+// --- Buffer Downloader ---
 async function fetchMediaBuffer(url) {
     const res = await axios.get(url, {
         responseType: 'arraybuffer',
-        timeout: 25000,
+        timeout: 45000,
         headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': '*/*',
-            'Referer': 'https://www.instagram.com/'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept': '*/*'
         }
     });
     const contentType = res.headers['content-type'] || '';
+    if (contentType.includes('text/html') || res.data.byteLength < 1000) {
+        throw new Error("Invalid media stream");
+    }
     const isImage = contentType.includes('image') || /\.(jpg|jpeg|png|webp)(\?|$)/i.test(url);
     return {
         buffer: Buffer.from(res.data),
@@ -70,81 +105,144 @@ async function fetchMediaBuffer(url) {
     };
 }
 
-// --- MULTI-ENGINE EXTRACTOR ---
-async function downloadMedia(url, platform, reqType) {
-    let mediaList = [];
-    let caption = "";
-    let title = "";
+// --- Cobalt Universal Engine (Works for IG, FB, YT, TikTok, X) ---
+async function tryCobaltInstances(targetUrl, isAudio) {
+    const instances = [
+        "https://cobalt-api.kwiatekmiki.com",
+        "https://cobalt.api.timelessnesses.me",
+        "https://api.cobalt.blackcat.sweeux.org"
+    ];
 
-    // 1. YOUTUBE (Working API-FAA Engine)
+    for (const instance of instances) {
+        try {
+            const res = await axios.post(instance, {
+                url: targetUrl,
+                downloadMode: isAudio ? "audio" : "auto",
+                videoQuality: "720"
+            }, {
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'Mozilla/5.0'
+                },
+                timeout: 10000
+            });
+
+            if (res.data?.url) {
+                return { media: [res.data.url], caption: "" };
+            }
+            if (res.data?.picker && Array.isArray(res.data.picker)) {
+                return { media: res.data.picker.map(p => p.url).filter(Boolean), caption: "" };
+            }
+        } catch (e) {}
+    }
+    return null;
+}
+
+// --- MAIN MULTI-ENGINE DOWNLOADER ---
+async function downloadMedia(url, platform, reqType) {
+    const isAudio = reqType === 'audio';
+
+    // 1. YOUTUBE (Avoid IP-locked googlevideo links by using CDN-tunneled APIs)
     if (platform === 'youtube') {
-        if (reqType === 'audio') {
-            const res = await axios.get(`https://api-faa.my.id/faa/ytmp3?url=${encodeURIComponent(url)}`, { timeout: 15000 });
-            if (!res.data?.status) throw new Error("YouTube Audio API failed");
-            return { media: [res.data.result.mp3], title: res.data.result.title, isDirectAudio: true };
+        const cleanUrl = cleanYtUrl(url);
+
+        // Try Cobalt first
+        const cob = await tryCobaltInstances(cleanUrl, isAudio);
+        if (cob) return cob;
+
+        if (isAudio) {
+            // Engine 1: FAA Audio (Works reliably via their proxy)
+            try {
+                const res = await axios.get(`https://api-faa.my.id/faa/ytmp3?url=${encodeURIComponent(cleanUrl)}`, { timeout: 15000 });
+                if (res.data?.result?.mp3) return { media: [res.data.result.mp3], title: res.data.result.title };
+            } catch (e) {}
+
+            // Engine 2: Agatz Audio
+            try {
+                const res = await axios.get(`https://api.agatz.xyz/api/ytmp3?url=${encodeURIComponent(cleanUrl)}`, { timeout: 15000 });
+                const dl = res.data?.data?.downloadUrl || res.data?.data?.url;
+                if (dl) return { media: [dl], title: res.data?.data?.title };
+            } catch (e) {}
         } else {
-            const res = await axios.get(`https://api-faa.my.id/faa/ytmp4?url=${encodeURIComponent(url)}`, { timeout: 15000 });
-            if (!res.data?.status) throw new Error("YouTube Video API failed");
-            return { media: [res.data.result.download_url], title: res.data.result.title, isDirectVideo: true };
+            // Video Engine 1: Agatz YTMP4 (CDN link, not IP locked)
+            try {
+                const res = await axios.get(`https://api.agatz.xyz/api/ytmp4?url=${encodeURIComponent(cleanUrl)}`, { timeout: 15000 });
+                const dl = res.data?.data?.downloadUrl || res.data?.data?.url;
+                if (dl && !dl.includes('googlevideo.com')) return { media: [dl], title: res.data?.data?.title };
+            } catch (e) {}
+
+            // Video Engine 2: Delirius YTMP4
+            try {
+                const res = await axios.get(`https://delirius-apiofc.vercel.app/download/ytmp4?url=${encodeURIComponent(cleanUrl)}`, { timeout: 15000 });
+                const dl = res.data?.data?.download?.url;
+                if (dl) return { media: [dl], title: res.data?.data?.title };
+            } catch (e) {}
+
+            // Video Engine 3: Siputzx YTMP4
+            try {
+                const res = await axios.get(`https://api.siputzx.my.id/api/d/ytmp4?url=${encodeURIComponent(cleanUrl)}`, { timeout: 15000 });
+                const dl = res.data?.data?.dl;
+                if (dl) return { media: [dl], title: res.data?.data?.title };
+            } catch (e) {}
         }
+
+        throw new Error("YouTube server busy. Please try again.");
     }
 
-    // 2. INSTAGRAM (Direct Scraper + 4 Fallbacks)
+    // 2. INSTAGRAM
     if (platform === 'instagram') {
         const cleanUrl = cleanIgUrl(url);
 
-        // Engine A: Direct Local Scraper (ruhend-scraper)
+        // Try Cobalt
+        const cob = await tryCobaltInstances(cleanUrl, isAudio);
+        if (cob) return cob;
+
+        // Try Local Ruhend Scraper
         if (scraper && scraper.igdl) {
             try {
                 const res = await scraper.igdl(cleanUrl);
                 const data = res.data || res;
                 if (Array.isArray(data) && data.length > 0) {
-                    const uniqueUrls = [...new Set(data.map(m => m.url).filter(Boolean))];
-                    if (uniqueUrls.length > 0) return { media: uniqueUrls, caption: "📸 Instagram Media" };
+                    const urls = [...new Set(data.map(m => m.url).filter(Boolean))];
+                    if (urls.length > 0) return { media: urls, caption: "📸 Instagram Media" };
                 }
             } catch (e) {}
         }
 
-        // Engine B: API-FAA Instagram
+        // Try Delirius IG API
         try {
-            const res = await axios.get(`https://api-faa.my.id/faa/igdl?url=${encodeURIComponent(cleanUrl)}`, { timeout: 10000 });
-            const d = res.data?.result || res.data?.data;
-            if (d) {
-                if (Array.isArray(d)) mediaList = d.map(x => x.url || x);
-                else if (d.url) mediaList = Array.isArray(d.url) ? d.url : [d.url];
-                caption = d.caption || d.title || "";
-                if (mediaList.length > 0) return { media: [...new Set(mediaList)], caption };
-            }
-        } catch (e) {}
-
-        // Engine C: Widipe API
-        try {
-            const res = await axios.get(`https://widipe.com/download/igdl?url=${encodeURIComponent(cleanUrl)}`, { timeout: 10000 });
-            const d = res.data?.result;
+            const res = await axios.get(`https://delirius-apiofc.vercel.app/download/instagram?url=${encodeURIComponent(cleanUrl)}`, { timeout: 12000 });
+            const d = res.data?.data;
             if (Array.isArray(d) && d.length > 0) {
-                mediaList = d.map(x => x.url).filter(Boolean);
-                if (mediaList.length > 0) return { media: [...new Set(mediaList)], caption: "📸 Instagram Media" };
+                return { media: d.map(x => x.url).filter(Boolean), caption: "📸 Instagram Media" };
             }
         } catch (e) {}
 
-        // Engine D: BK9 API
+        // Try Agatz IG API
         try {
-            const res = await axios.get(`https://bk9.fun/download/instagram?url=${encodeURIComponent(cleanUrl)}`, { timeout: 10000 });
-            const d = res.data?.BK9;
+            const res = await axios.get(`https://api.agatz.xyz/api/instagram?url=${encodeURIComponent(cleanUrl)}`, { timeout: 12000 });
+            const d = res.data?.data;
             if (Array.isArray(d) && d.length > 0) {
-                mediaList = d.map(x => x.url).filter(Boolean);
-                if (mediaList.length > 0) return { media: [...new Set(mediaList)], caption: "📸 Instagram Media" };
+                return { media: d.map(x => x.url || x).filter(Boolean), caption: "📸 Instagram Media" };
             }
         } catch (e) {}
 
-        throw new Error("Instagram link could not be fetched. Make sure you ran 'npm install ruhend-scraper' and the post is public.");
+        throw new Error("Could not extract Instagram link.");
     }
 
-    // 3. FACEBOOK (Direct Scraper + 3 Fallbacks)
+    // 3. FACEBOOK (Resolves /share/r/ links first!)
     if (platform === 'facebook') {
+        const resolvedUrl = await resolveRedirectUrl(url);
+
+        // Try Cobalt
+        const cob = await tryCobaltInstances(resolvedUrl, isAudio);
+        if (cob) return cob;
+
+        // Try Local Ruhend Scraper with resolved URL
         if (scraper && scraper.fbdl) {
             try {
-                const res = await scraper.fbdl(url);
+                const res = await scraper.fbdl(resolvedUrl);
                 const data = res.data || res;
                 if (Array.isArray(data) && data.length > 0) {
                     return { media: [data[0].url], caption: "🔵 Facebook Video" };
@@ -152,161 +250,62 @@ async function downloadMedia(url, platform, reqType) {
             } catch (e) {}
         }
 
+        // Try Delirius FB API
         try {
-            const res = await axios.get(`https://api-faa.my.id/faa/fbdl?url=${encodeURIComponent(url)}`, { timeout: 10000 });
-            const d = res.data?.result || res.data?.data;
-            const vUrl = d?.hd || d?.sd || d?.url || (Array.isArray(d) ? d[0]?.url : null);
-            if (vUrl) return { media: [vUrl], caption: d?.title || "🔵 Facebook Video" };
+            const res = await axios.get(`https://delirius-apiofc.vercel.app/download/facebook?url=${encodeURIComponent(resolvedUrl)}`, { timeout: 12000 });
+            const urls = res.data?.urls;
+            if (Array.isArray(urls) && urls.length > 0) {
+                const bestUrl = urls[0].hd || urls[0].sd || urls[0].url;
+                if (bestUrl) return { media: [bestUrl], caption: res.data?.title || "🔵 Facebook Video" };
+            }
         } catch (e) {}
 
+        // Try Agatz FB API
         try {
-            const res = await axios.get(`https://widipe.com/download/fbdl?url=${encodeURIComponent(url)}`, { timeout: 10000 });
-            const d = res.data?.result;
-            const vUrl = d?.hd || d?.sd || d?.url;
-            if (vUrl) return { media: [vUrl], caption: d?.title || "🔵 Facebook Video" };
+            const res = await axios.get(`https://api.agatz.xyz/api/facebook?url=${encodeURIComponent(resolvedUrl)}`, { timeout: 12000 });
+            const d = res.data?.data;
+            const bestUrl = d?.hd || d?.sd || d?.url;
+            if (bestUrl) return { media: [bestUrl], caption: d?.title || "🔵 Facebook Video" };
         } catch (e) {}
 
-        throw new Error("Facebook video download failed. Check if the video is public.");
+        throw new Error("Facebook download failed. Ensure the video is public.");
     }
 
     // 4. TIKTOK
     if (platform === 'tiktok') {
-        if (scraper && scraper.ttdl) {
-            try {
-                const res = await scraper.ttdl(url);
-                if (res && (res.video || res.audio)) {
-                    return {
-                        media: [reqType === 'audio' && res.audio ? res.audio : res.video],
-                        caption: res.title || "🎵 TikTok Media",
-                        isDirectAudio: reqType === 'audio'
-                    };
-                }
-            } catch (e) {}
-        }
-
         try {
-            const res = await axios.get(`https://www.tikwm.com/api/?url=${encodeURIComponent(url)}`, { timeout: 10000 });
+            const res = await axios.get(`https://www.tikwm.com/api/?url=${encodeURIComponent(url)}`, { timeout: 12000 });
             const d = res.data?.data;
             if (d) {
-                if (reqType === 'audio' && d.music) return { media: [d.music], title: d.title, isDirectAudio: true };
+                if (isAudio && d.music) return { media: [d.music], title: d.title };
                 if (d.images && d.images.length > 0) return { media: d.images, caption: d.title || "" };
                 if (d.play) return { media: [d.play], caption: d.title || "" };
             }
         } catch (e) {}
-
         throw new Error("TikTok download failed.");
     }
 
     // 5. TWITTER / X
     if (platform === 'twitter') {
-        try {
-            const cleanTw = url.replace(/(twitter\.com|x\.com)/i, "api.vxtwitter.com");
-            const res = await axios.get(cleanTw, { timeout: 10000 });
-            if (res.data && res.data.media_extended && res.data.media_extended.length > 0) {
-                return {
-                    media: res.data.media_extended.map(m => m.url),
-                    caption: res.data.text || "🐦 X / Twitter Media"
-                };
-            }
-        } catch (e) {}
+        const cleanTw = url.split('?')[0].replace(/(twitter\.com|x\.com)/i, "api.vxtwitter.com");
+        const res = await axios.get(cleanTw, { timeout: 10000 });
+        if (res.data?.media_extended?.length > 0) {
+            return {
+                media: res.data.media_extended.map(m => m.url),
+                caption: res.data.text || "🐦 X Media"
+            };
+        }
         throw new Error("Twitter/X download failed.");
     }
 
-    // 6. PINTEREST & OTHER PLATFORMS
-    try {
-        const res = await axios.get(`https://bk9.fun/download/alldownload?url=${encodeURIComponent(url)}`, { timeout: 12000 });
-        const d = res.data?.BK9;
-        const mUrl = d?.high || d?.low || d?.url || (d?.medias && d.medias[0]?.url);
-        if (mUrl) return { media: [mUrl], caption: d?.title || `🌐 Downloaded Media` };
-    } catch (e) {}
+    // 6. OTHER PLATFORMS (Pinterest, Threads, Snapchat)
+    const cob = await tryCobaltInstances(url, isAudio);
+    if (cob) return cob;
 
     throw new Error(`Could not extract media from ${platform}.`);
 }
 
-// --- CORE EXECUTION FUNCTION ---
-async function executeDownload(message, cmd, targetUrl) {
-    const platform = getPlatform(targetUrl);
-    if (platform === 'unknown') {
-        return await message.sendReply("❌ *Invalid Link!* Supported: YouTube, Instagram, Facebook, TikTok, X, Pinterest.");
-    }
-
-    let reqType = 'video';
-    if (['song', 'play', 'mp3', 'audio', 'yta'].includes(cmd)) reqType = 'audio';
-    if (['photo', 'pic', 'image'].includes(cmd)) reqType = 'image';
-
-    const waitMsg = await message.sendReply(`⚡ *Downloading ${platform.toUpperCase()} ${reqType}...*`);
-
-    try {
-        const data = await downloadMedia(targetUrl, platform, reqType);
-        if (!data.media || data.media.length === 0) throw new Error("No media found in link.");
-
-        const captionText = data.caption
-            ? `📝 *Caption:* ${data.caption.substring(0, 600)}\n\n⚡ *OGGY-MD SYSTEM*`
-            : data.title
-            ? `🎬 *${data.title}*\n\n⚡ *OGGY-MD SYSTEM*`
-            : `⚡ *OGGY-MD SYSTEM*`;
-
-        // Direct YouTube / TikTok URL handling
-        if (data.isDirectAudio) {
-            await message.client.sendMessage(message.jid, {
-                audio: { url: data.media[0] },
-                mimetype: "audio/mpeg",
-                fileName: `${data.title || 'audio'}.mp3`
-            }, { quoted: message.data });
-            if (waitMsg?.key) await message.client.sendMessage(message.jid, { delete: waitMsg.key });
-            return;
-        }
-
-        if (data.isDirectVideo) {
-            await message.client.sendMessage(message.jid, {
-                video: { url: data.media[0] },
-                caption: captionText
-            }, { quoted: message.data });
-            if (waitMsg?.key) await message.client.sendMessage(message.jid, { delete: waitMsg.key });
-            return;
-        }
-
-        // Buffer-based handling for Instagram, Facebook, Carousels, and Audio Extraction
-        for (let i = 0; i < data.media.length; i++) {
-            const mUrl = data.media[i];
-            if (!mUrl) continue;
-
-            const { buffer, type } = await fetchMediaBuffer(mUrl);
-
-            // If user requested SONG/AUDIO from Instagram Reel or FB Video
-            if (reqType === 'audio') {
-                if (type === 'image') {
-                    throw new Error("This link is a Photo post and does not contain audio!");
-                }
-                await message.client.sendMessage(message.jid, {
-                    audio: buffer,
-                    mimetype: 'audio/mp4',
-                    ptt: false
-                }, { quoted: message.data });
-                break; // Only send audio from the first video
-            }
-
-            // Send Video or Photo (Supports Full Carousel Slide Download)
-            let msgObj = {};
-            if (type === 'image') {
-                msgObj.image = buffer;
-            } else {
-                msgObj.video = buffer;
-            }
-
-            if (i === 0) msgObj.caption = captionText;
-            await message.client.sendMessage(message.jid, msgObj, { quoted: message.data });
-        }
-
-        if (waitMsg?.key) await message.client.sendMessage(message.jid, { delete: waitMsg.key });
-
-    } catch (err) {
-        await message.sendReply(`❌ *Error:* ${err.message}`);
-        if (waitMsg?.key) await message.client.sendMessage(message.jid, { delete: waitMsg.key });
-    }
-}
-
-// --- 1. COMMAND HANDLER (.song, .video, .photo, .ig, .fb) ---
+// --- SINGLE UNIFIED COMMAND MODULE (No duplicate listeners!) ---
 Module(
     {
         pattern: "^[.]?(song|video|photo|play|mp3|mp4|pic|ig|insta|fb|tiktok|all)(?:\\s+(.*))?$",
@@ -319,26 +318,28 @@ Module(
         const cmd = match[1].toLowerCase();
         let query = match[2] ? match[2].trim() : '';
 
-        if (!query && message.reply_message?.text) {
-            query = message.reply_message.text.trim();
+        // Safely extract link from replied message if not provided directly
+        if (!query) {
+            query = getReplyText(message).trim();
         }
 
         const targetUrl = extractUrl(query);
 
-        // If no URL is given and user typed .song <song name>, search YouTube
+        // If user typed .song <song name> without a link, search YouTube
         if (!targetUrl && ['song', 'play', 'mp3'].includes(cmd) && query) {
             const waitMsg = await message.sendReply(`🔎 *Searching YouTube for "${query}"...*`);
             try {
                 const res = await axios.get(`https://api-faa.my.id/faa/ytplay?query=${encodeURIComponent(query)}`, { timeout: 15000 });
-                if (!res.data?.status) throw new Error("Song not found");
+                if (!res.data?.result?.mp3) throw new Error("Song not found");
+                const { buffer } = await fetchMediaBuffer(res.data.result.mp3);
                 await message.client.sendMessage(message.jid, {
-                    audio: { url: res.data.result.mp3 },
+                    audio: buffer,
                     mimetype: "audio/mpeg",
-                    fileName: `${res.data.result.title}.mp3`
+                    fileName: `${res.data.result.title || 'song'}.mp3`
                 }, { quoted: message.data });
                 if (waitMsg?.key) await message.client.sendMessage(message.jid, { delete: waitMsg.key });
             } catch (e) {
-                await message.sendReply(`❌ *Search failed:* Could not download "${query}".`);
+                await message.sendReply(`❌ *Search failed:* Try sending a direct link.`);
                 if (waitMsg?.key) await message.client.sendMessage(message.jid, { delete: waitMsg.key });
             }
             return;
@@ -355,20 +356,59 @@ Module(
             );
         }
 
-        await executeDownload(message, cmd, targetUrl);
-    }
-);
+        const platform = getPlatform(targetUrl);
+        if (platform === 'unknown') {
+            return await message.sendReply("❌ *Unsupported link!* Try YouTube, Instagram, Facebook, TikTok, or X.");
+        }
 
-// --- 2. DIRECT REPLY HANDLER (Works even without dot prefix) ---
-Module({ on: 'text', fromMe: isFromMe }, async (message) => {
-    if (!message.jid || !message.reply_message?.text) return;
-    const rawText = (message.text || message.message || '').trim().toLowerCase();
+        let reqType = 'video';
+        if (['song', 'play', 'mp3', 'audio'].includes(cmd)) reqType = 'audio';
+        if (['photo', 'pic', 'image'].includes(cmd)) reqType = 'image';
 
-    // Only trigger if user replies with plain word (without dot, since Module 1 handles dot commands)
-    if (['song', 'video', 'photo', 'mp3', 'mp4', 'pic', 'all', 'audio'].includes(rawText)) {
-        const targetUrl = extractUrl(message.reply_message.text);
-        if (targetUrl && getPlatform(targetUrl) !== 'unknown') {
-            await executeDownload(message, rawText, targetUrl);
+        const waitMsg = await message.sendReply(`⚡ *Downloading ${platform.toUpperCase()} ${reqType}...*`);
+
+        try {
+            const data = await downloadMedia(targetUrl, platform, reqType);
+            if (!data.media || data.media.length === 0) throw new Error("No media found.");
+
+            const captionText = data.caption
+                ? `📝 ${data.caption.substring(0, 600)}\n\n⚡ *OGGY-MD SYSTEM*`
+                : data.title
+                ? `🎬 *${data.title}*\n\n⚡ *OGGY-MD SYSTEM*`
+                : `⚡ *OGGY-MD SYSTEM*`;
+
+            for (let i = 0; i < data.media.length; i++) {
+                const mUrl = data.media[i];
+                if (!mUrl) continue;
+
+                // Always download into buffer on VPS first so Baileys never crashes on IP-locked streams
+                const { buffer, type } = await fetchMediaBuffer(mUrl);
+
+                if (reqType === 'audio') {
+                    await message.client.sendMessage(message.jid, {
+                        audio: buffer,
+                        mimetype: 'audio/mp4',
+                        ptt: false
+                    }, { quoted: message.data });
+                    break;
+                }
+
+                let msgObj = {};
+                if (type === 'image') {
+                    msgObj.image = buffer;
+                } else {
+                    msgObj.video = buffer;
+                }
+
+                if (i === 0) msgObj.caption = captionText;
+                await message.client.sendMessage(message.jid, msgObj, { quoted: message.data });
+            }
+
+            if (waitMsg?.key) await message.client.sendMessage(message.jid, { delete: waitMsg.key });
+
+        } catch (err) {
+            await message.sendReply(`❌ *Error:* ${err.message}`);
+            if (waitMsg?.key) await message.client.sendMessage(message.jid, { delete: waitMsg.key });
         }
     }
-});
+);
