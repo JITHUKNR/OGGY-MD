@@ -25,6 +25,23 @@ const getReplyText = (message) => {
   );
 };
 
+// --- UNIVERSAL MENU GENERATOR ---
+const sendUniversalMenu = async (message) => {
+  return await message.sendReply(
+    `╭━━━〔 📥 *OGGY-MD DOWNLOADER* 〕━━━╮\n` +
+    `┃ 📌 *Supported Platforms:*\n` +
+    `┃ YouTube, Instagram, Facebook, TikTok,\n` +
+    `┃ Twitter/X, Snapchat, Spotify, Pinterest.\n` +
+    `┃\n` +
+    `┃ 💡 *How to use:*\n` +
+    `┃ Reply to any platform's link with:\n` +
+    `┃ • \`song\` - For Audio/Music\n` +
+    `┃ • \`video\` - For Video/Reels\n` +
+    `┃ • \`photo\` - For Images/Slides\n` +
+    `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯`
+  );
+};
+
 // --- 1. AUDIO / SONG DOWNLOADER (song, play, mp3, ytmp3, yta, yt) ---
 Module(
   {
@@ -35,15 +52,24 @@ Module(
     use: "download",
   },
   async (message, match) => {
+    const cmd = match[1].toLowerCase();
     let query = match[2] ? match[2].trim() : "";
     if (!query) {
       query = getReplyText(message).trim();
     }
 
+    // 🚨 CLASH PREVENTION: Ignore links from other platforms!
+    if (query.match(/instagram|instagr\.am|fb|facebook|tiktok|twitter|x\.com|snapchat|spotify|pinterest|pin\.it|threads|mediafire|mega|sfile/i)) {
+      return; 
+    }
+
     if (!query) {
-      return await message.sendReply(
-        `🎧 *OGGY-MD YOUTUBE AUDIO*\n\n📌 *Usage:*\n• \`song <song name>\`\n• \`song <youtube/shorts link>\`\n\n✨ _Reply 'song' to any YouTube link also works!_`
-      );
+      // Show YT specific menu ONLY if they type .yt or .yta
+      if (['yt', 'yta', 'ytmp3'].includes(cmd)) {
+         return await message.sendReply(`🎧 *OGGY-MD YOUTUBE AUDIO*\n\n📌 *Usage:*\n• \`.yt <song name>\`\n• \`.yt <link>\``);
+      }
+      // Otherwise, show the universal menu
+      return await sendUniversalMenu(message);
     }
 
     const waitMsg = await message.sendReply("🎶 *Downloading high-quality audio...*");
@@ -148,15 +174,23 @@ Module(
     use: "download",
   },
   async (message, match) => {
+    const cmd = match[1].toLowerCase();
     let query = match[2] ? match[2].trim() : "";
     if (!query) {
       query = getReplyText(message).trim();
     }
 
+    // 🚨 CLASH PREVENTION: Ignore links from other platforms!
+    if (query.match(/instagram|instagr\.am|fb|facebook|tiktok|twitter|x\.com|snapchat|spotify|pinterest|pin\.it|threads|mediafire|mega|sfile/i)) {
+      return; 
+    }
+
     if (!query) {
-      return await message.sendReply(
-        `🎬 *OGGY-MD YOUTUBE VIDEO*\n\n📌 *Usage:*\n• \`video <video name>\`\n• \`video <youtube/shorts link>\`\n\n✨ _Reply 'video' to any YouTube or Shorts link also works!_`
-      );
+      // Show YT specific menu ONLY if they type .ytv or .mp4
+      if (['ytv', 'ytmp4', 'mp4'].includes(cmd)) {
+         return await message.sendReply(`🎬 *OGGY-MD YOUTUBE VIDEO*\n\n📌 *Usage:*\n• \`.ytv <video name>\`\n• \`.ytv <link>\``);
+      }
+      return await sendUniversalMenu(message);
     }
 
     const waitMsg = await message.sendReply("🎥 *Downloading high-quality video...*");
