@@ -14,37 +14,34 @@ const extractUrl = (text) => {
 };
 
 const getReplyText = (message) => {
+  if (message.quoted && message.quoted.text) return message.quoted.text;
+  if (message.quoted && message.quoted.message) return message.quoted.message;
+  
   if (!message.reply_message) return "";
+  const rm = message.reply_message;
   return (
-    message.reply_message.text ||
-    message.reply_message.caption ||
-    message.reply_message.message ||
-    message.reply_message?.data?.message?.conversation ||
+    rm.text ||
+    rm.caption ||
+    rm.message ||
+    rm.matchedText ||
+    rm.canonicalUrl ||
+    rm?.data?.message?.conversation ||
+    rm?.data?.message?.extendedTextMessage?.text ||
+    rm?.data?.message?.videoMessage?.caption ||
     ""
   );
 };
 
-// Helper: Resolve Facebook Redirects (Important for share/r/ or fb.watch links)
-async function resolveRedirectUrl(url) {
-  try {
-    const res = await axios.get(url, { maxRedirects: 5, timeout: 8000 });
-    return res.request?.res?.responseUrl || url;
-  } catch (e) {
-    return e.request?.res?.responseUrl || url;
-  }
-}
-
 // --- HIGH QUALITY FACEBOOK FETCHER ---
 async function fetchFacebook(url) {
-  let resolvedUrl = await resolveRedirectUrl(url);
   let media = [];
   let caption = "🔵 *Facebook Media*\n\n⚡ *OGGY-MD SYSTEM*";
 
-  // 1. Primary Engine: Vreden API (Best for HD Videos)
+  // 1. Primary Engine: Vreden API (Works well with raw share/r/ links)
   try {
-    const { data } = await axios.get(`https://api.vreden.my.id/api/facebook?url=${encodeURIComponent(resolvedUrl)}`, { timeout: 15000 });
+    const { data } = await axios.get(`https://api.vreden.my.id/api/facebook?url=${encodeURIComponent(url)}`, { timeout: 15000 });
     if (data && data.result) {
-       let bestVideo = data.result.find(v => v.resolusi === 'HD') || data.result[0];
+       let bestVideo = data.result.find(v => v.resolusi === 'HD') || data.result.find(v => v.resolusi === 'SD') || data.result[0];
        if (bestVideo && bestVideo.url) {
           return { media: [{ url: bestVideo.url, type: 'video' }], caption };
        }
@@ -53,7 +50,7 @@ async function fetchFacebook(url) {
 
   // 2. Engine: Agatz API
   try {
-    const { data } = await axios.get(`https://api.agatz.xyz/api/facebook?url=${encodeURIComponent(resolvedUrl)}`, { timeout: 15000 });
+    const { data } = await axios.get(`https://api.agatz.xyz/api/facebook?url=${encodeURIComponent(url)}`, { timeout: 15000 });
     if (data && data.status && data.data) {
       let d = data.data;
       let best = d.hd || d.sd || d.url;
@@ -61,13 +58,11 @@ async function fetchFacebook(url) {
     }
   } catch (e) {}
 
-  // 3. Backup Engine: Siputzx All DL (Handles photos well)
+  // 3. Engine: Nexray API
   try {
-    const { data } = await axios.get(`https://api.siputzx.my.id/api/d/alldl?url=${encodeURIComponent(resolvedUrl)}`, { timeout: 15000 });
-    if (data && data.data) {
-      let d = data.data;
-      if (d.video) return { media: [{ url: d.video, type: 'video' }], caption: d.title ? `🔵 *${d.title}*\n\n⚡ *OGGY-MD SYSTEM*` : caption };
-      if (d.image) return { media: [{ url: d.image, type: 'image' }], caption: d.title ? `🔵 *${d.title}*\n\n⚡ *OGGY-MD SYSTEM*` : caption };
+    const { data } = await axios.get(`https://api.nexray.web.id/downloader/facebook?url=${encodeURIComponent(url)}`, { timeout: 15000 });
+    if (data && data.status && data.result && data.result.video) {
+       return { media: [{ url: data.result.video, type: 'video' }], caption };
     }
   } catch (e) {}
 
@@ -84,7 +79,6 @@ async function processFacebook(message, cmd, targetUrl) {
     for (let i = 0; i < data.media.length; i++) {
       let item = data.media[i];
 
-      // If user requested SONG/AUDIO
       if (['song', 'audio', 'mp3'].includes(cmd)) {
         if (item.type === 'video') {
           if (i === 0) {
@@ -132,8 +126,7 @@ Module(
     let query = match[2] ? match[2].trim() : "";
 
     if (!query) query = getReplyText(message).trim();
-    // Prevent clashing with other modules
-    if (query.includes('youtu') || query.includes('instagram') || query.includes('twitter') || query.includes('x.com')) return;
+    if (query.match(/youtu|instagram|instagr\.am|tiktok|twitter|x\.com|snapchat|spotify|pinterest|pin\.it|threads/i)) return;
 
     const targetUrl = extractUrl(query);
 
@@ -151,7 +144,6 @@ Module(
       return; 
     }
 
-    // Default to video if just the link is passed with command
     let reqCmd = 'video';
     if (['song', 'photo'].includes(cmd)) reqCmd = cmd;
     await processFacebook(message, reqCmd, targetUrl);
@@ -166,8 +158,7 @@ Module({ on: 'text', fromMe: isFromMe }, async (message) => {
   if (['song', 'video', 'photo', 'audio', 'pic', 'mp3', 'mp4'].includes(text)) {
     const targetUrl = extractUrl(getReplyText(message));
     
-    // Process only if it is a Facebook link
-    if (targetUrl && !targetUrl.includes('youtu') && !targetUrl.includes('instagram') && !targetUrl.includes('twitter')) {
+    if (targetUrl && targetUrl.match(/facebook|fb\.watch|fb\.com/i)) {
       await processFacebook(message, text, targetUrl);
     }
   }
