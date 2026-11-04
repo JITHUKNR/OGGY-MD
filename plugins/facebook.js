@@ -4,40 +4,40 @@ const axios = require("axios");
 
 const isFromMe = botConfig.MODE === "public" ? false : true;
 
-// Facebook URL Regex (Supports fb.watch, fb.com, share/r/, etc.)
 const FB_REGEX = /(?:https?:\/\/)?(?:www\.|m\.|web\.|video\.|watch\.)?(?:facebook\.com|fb\.watch|fb\.com|fb\.gg|fb\.me)\/[^\s]+/i;
 
 const extractUrl = (text) => {
   if (!text) return null;
-  const match = text.match(FB_REGEX);
+  let safeText = String(text); // 100% force string
+  const match = safeText.match(FB_REGEX);
   return match ? match[0] : null;
 };
 
 const getReplyText = (message) => {
-  if (message.quoted && message.quoted.text) return message.quoted.text;
-  if (message.quoted && message.quoted.message) return message.quoted.message;
-  
-  if (!message.reply_message) return "";
-  const rm = message.reply_message;
-  return (
-    rm.text ||
-    rm.caption ||
-    rm.message ||
-    rm.matchedText ||
-    rm.canonicalUrl ||
-    rm?.data?.message?.conversation ||
-    rm?.data?.message?.extendedTextMessage?.text ||
-    rm?.data?.message?.videoMessage?.caption ||
-    ""
-  );
+  try {
+    if (!message.reply_message) return "";
+    let rm = message.reply_message;
+    let text = rm.text || rm.caption || rm.conversation || rm.matchedText || rm.canonicalUrl || "";
+    
+    // Safely extract from object if WhatsApp sends it as an object
+    if (!text && rm.message) {
+      if (typeof rm.message === 'string') {
+        text = rm.message;
+      } else if (typeof rm.message === 'object') {
+        text = rm.message.conversation || rm.message.extendedTextMessage?.text || rm.message.videoMessage?.caption || rm.message.imageMessage?.caption || "";
+      }
+    }
+    return String(text).trim(); // Never returns an object
+  } catch (e) {
+    return "";
+  }
 };
 
 // --- HIGH QUALITY FACEBOOK FETCHER ---
 async function fetchFacebook(url) {
-  let media = [];
   let caption = "🔵 *Facebook Media*\n\n⚡ *OGGY-MD SYSTEM*";
 
-  // 1. Primary Engine: Vreden API (Works well with raw share/r/ links)
+  // 1. Primary Engine: Vreden API
   try {
     const { data } = await axios.get(`https://api.vreden.my.id/api/facebook?url=${encodeURIComponent(url)}`, { timeout: 15000 });
     if (data && data.result) {
@@ -58,11 +58,13 @@ async function fetchFacebook(url) {
     }
   } catch (e) {}
 
-  // 3. Engine: Nexray API
+  // 3. Backup Engine: Siputzx All DL
   try {
-    const { data } = await axios.get(`https://api.nexray.web.id/downloader/facebook?url=${encodeURIComponent(url)}`, { timeout: 15000 });
-    if (data && data.status && data.result && data.result.video) {
-       return { media: [{ url: data.result.video, type: 'video' }], caption };
+    const { data } = await axios.get(`https://api.siputzx.my.id/api/d/alldl?url=${encodeURIComponent(url)}`, { timeout: 15000 });
+    if (data && data.data) {
+      let d = data.data;
+      if (d.video) return { media: [{ url: d.video, type: 'video' }], caption: d.title ? `🔵 *${d.title}*\n\n⚡ *OGGY-MD SYSTEM*` : caption };
+      if (d.image) return { media: [{ url: d.image, type: 'image' }], caption: d.title ? `🔵 *${d.title}*\n\n⚡ *OGGY-MD SYSTEM*` : caption };
     }
   } catch (e) {}
 
@@ -123,9 +125,12 @@ Module(
   },
   async (message, match) => {
     const cmd = match[1].toLowerCase();
-    let query = match[2] ? match[2].trim() : "";
+    let query = match[2] ? String(match[2]).trim() : "";
 
-    if (!query) query = getReplyText(message).trim();
+    if (!query) query = getReplyText(message);
+    
+    query = String(query).trim(); // Double check
+
     if (query.match(/youtu|instagram|instagr\.am|tiktok|twitter|x\.com|snapchat|spotify|pinterest|pin\.it|threads/i)) return;
 
     const targetUrl = extractUrl(query);
@@ -153,10 +158,11 @@ Module(
 // --- 2. DIRECT REPLY LISTENER ---
 Module({ on: 'text', fromMe: isFromMe }, async (message) => {
   if (!message.jid || !message.reply_message) return;
-  const text = (message.text || message.message || "").trim().toLowerCase();
+  const text = String(message.text || message.message || "").trim().toLowerCase();
   
   if (['song', 'video', 'photo', 'audio', 'pic', 'mp3', 'mp4'].includes(text)) {
-    const targetUrl = extractUrl(getReplyText(message));
+    let replyTxt = getReplyText(message);
+    const targetUrl = extractUrl(replyTxt);
     
     if (targetUrl && targetUrl.match(/facebook|fb\.watch|fb\.com/i)) {
       await processFacebook(message, text, targetUrl);
