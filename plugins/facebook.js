@@ -1,10 +1,9 @@
 const { Module } = require("../main");
 const { fb } = require("./utils"); 
 const botConfig = require("../config");
-const axios = require("axios"); // Added for caption and photo fetching
+const axios = require("axios");
 const isFromMe = botConfig.MODE === "public" ? false : true;
 
-// Facebook URL Regex
 const FB_REGEX = /(?:https?:\/\/)?(?:www\.|m\.|web\.|video\.|watch\.)?(?:facebook\.com|fb\.watch|fb\.com|fb\.gg|fb\.me)\/[^\s]+/i;
 
 const extractUrl = (text) => {
@@ -48,7 +47,7 @@ async function processFacebook(message, cmd, targetUrl) {
        }
     } catch(e) {}
 
-    // 2. WhatsApp "Read More" Magic Trick
+    // WhatsApp "Read More" Magic Trick
     const readMore = String.fromCharCode(8206).repeat(4000);
     let finalCaption = `🔵 *Facebook Media*`;
     
@@ -58,27 +57,22 @@ async function processFacebook(message, cmd, targetUrl) {
         finalCaption += `\n\n⚡ *OGGY-MD SYSTEM*`;
     }
 
-    // 3. Process Based on Command
     if (['photo', 'pic', 'image'].includes(cmd)) {
-      // Fetching Facebook Photo
+      // Photo Fetching
       let photoUrl = null;
       try {
          const { data } = await axios.get(`https://api.vreden.my.id/api/facebook?url=${encodeURIComponent(targetUrl)}`);
-         if (data && data.result && data.result[0] && data.result[0].url) {
-             photoUrl = data.result[0].url;
-         }
+         if (data && data.result && data.result[0] && data.result[0].url) photoUrl = data.result[0].url;
       } catch(e) {}
 
       if (!photoUrl) {
          try {
             const { data } = await axios.get(`https://api.siputzx.my.id/api/d/facebook?url=${encodeURIComponent(targetUrl)}`);
-            if (data && data.data && data.data.length > 0) {
-                photoUrl = data.data[0].url || data.data[0].thumbnail;
-            }
+            if (data && data.data && data.data.length > 0) photoUrl = data.data[0].url || data.data[0].thumbnail;
          } catch(e) {}
       }
 
-      if (!photoUrl) throw new Error("Could not fetch photo. Ensure the post is a public photo post.");
+      if (!photoUrl) throw new Error("Could not fetch photo. Ensure it's a public image post.");
 
       await message.client.sendMessage(message.jid, {
         image: { url: photoUrl },
@@ -86,22 +80,47 @@ async function processFacebook(message, cmd, targetUrl) {
       }, { quoted: message.data });
 
     } else {
-      // Fetching Facebook Video or Song using your reliable 'fb' utils
-      const { url } = await fb(targetUrl);
-      
-      if (!url) {
-          throw new Error("No download URL returned from API");
+      // 2. VIDEO / AUDIO FETCHING WITH 3 BACKUP APIs
+      let mediaUrl = null;
+
+      // Backup 1: User's utils fb() API
+      try {
+         const fbRes = await fb(targetUrl);
+         if (fbRes && fbRes.url) mediaUrl = fbRes.url;
+      } catch(e) { console.log("Utils fb() failed"); }
+
+      // Backup 2: Vreden API
+      if (!mediaUrl) {
+         try {
+            const { data } = await axios.get(`https://api.vreden.my.id/api/facebook?url=${encodeURIComponent(targetUrl)}`);
+            if (data && data.result) {
+                let bestVideo = data.result.find(v => v.resolusi === 'HD') || data.result.find(v => v.resolusi === 'SD') || data.result[0];
+                if (bestVideo && bestVideo.url) mediaUrl = bestVideo.url;
+            }
+         } catch(e) {}
       }
+
+      // Backup 3: Agatz API
+      if (!mediaUrl) {
+         try {
+            const { data } = await axios.get(`https://api.agatz.xyz/api/facebook?url=${encodeURIComponent(targetUrl)}`);
+            if (data && data.status && data.data) {
+                mediaUrl = data.data.hd || data.data.sd || data.data.url;
+            }
+         } catch(e) {}
+      }
+
+      if (!mediaUrl) throw new Error("Failed to fetch video. The post might be private or deleted.");
 
       if (['song', 'audio', 'mp3'].includes(cmd)) {
         await message.client.sendMessage(message.jid, {
-          audio: { url: url },
+          audio: { url: mediaUrl },
           mimetype: 'audio/mp4',
           ptt: false
         }, { quoted: message.data });
       } else {
         await message.client.sendMessage(message.jid, {
-          video: { url: url },
+          video: { url: mediaUrl },
           caption: finalCaption
         }, { quoted: message.data });
       }
@@ -111,7 +130,7 @@ async function processFacebook(message, cmd, targetUrl) {
 
   } catch (err) {
     console.error("Facebook download error:", err.message);
-    await message.sendReply(`❌ *Facebook Download Failed:* ${err.message || "_Something went wrong, Please try again!_"}`);
+    await message.sendReply(`❌ *Facebook Download Failed:* ${err.message}`);
     if (waitMsg && waitMsg.key) await message.client.sendMessage(message.jid, { delete: waitMsg.key });
   }
 }
@@ -131,7 +150,6 @@ Module(
     if (!query) query = getReplyText(message);
     query = String(query).trim();
 
-    // Prevent clashing with other platforms
     if (query.match(/youtu|instagram|instagr\.am|tiktok|twitter|x\.com|snapchat|spotify|pinterest|pin\.it|threads/i)) return;
 
     const targetUrl = extractUrl(query);
