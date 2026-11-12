@@ -1,9 +1,9 @@
 const { Module } = require("../main");
-const { fb } = require("./utils"); 
+const { fb } = require("./utils"); // Using the custom FB function from your utils
 const botConfig = require("../config");
-const axios = require("axios"); 
 const isFromMe = botConfig.MODE === "public" ? false : true;
 
+// Facebook URL Regex (Matches fb.watch, fb.com, share/r/, etc.)
 const FB_REGEX = /(?:https?:\/\/)?(?:www\.|m\.|web\.|video\.|watch\.)?(?:facebook\.com|fb\.watch|fb\.com|fb\.gg|fb\.me)\/[^\s]+/i;
 
 const extractUrl = (text) => {
@@ -36,38 +36,16 @@ async function processFacebook(message, targetUrl) {
   const waitMsg = await message.sendReply("⚡ *Fetching High-Quality Facebook Video...*");
   
   try {
-    // 1. നിങ്ങളുടെ വർക്കിംഗ് കോഡ് ഉപയോഗിച്ച് വീഡിയോ എടുക്കുന്നു
+    // Utilize the robust 'fb' utility function from your reference code
     const { url } = await fb(targetUrl);
     
     if (!url) {
         throw new Error("No download URL returned from API");
     }
 
-    // 2. ക്യാപ്ഷൻ എടുക്കാൻ മാത്രം വേറെ API ഉപയോഗിക്കുന്നു
-    let actualCaption = "";
-    try {
-       const { data } = await axios.get(`https://api.vreden.my.id/api/facebook?url=${encodeURIComponent(targetUrl)}`);
-       if (data && data.result) {
-           actualCaption = data.result.title || data.result.desc || "";
-       }
-    } catch(e) {
-       console.log("Caption fetch failed, but video will still send.");
-    }
-
-    // 3. 'Read More' മാജിക് സെറ്റ് ചെയ്യുന്നു
-    const readMore = String.fromCharCode(8206).repeat(4000);
-    let finalCaption = `🔵 *Facebook Media*`;
-    
-    if (actualCaption) {
-        finalCaption += `\n${readMore}\n📝 *Caption:*\n${actualCaption}\n\n⚡ *OGGY-MD SYSTEM*`;
-    } else {
-        finalCaption += `\n\n⚡ *OGGY-MD SYSTEM*`;
-    }
-
-    // വീഡിയോ മെസ്സേജ് അയക്കുന്നു
     await message.client.sendMessage(message.jid, {
         video: { url: url },
-        caption: finalCaption
+        caption: "🔵 *Facebook Media*\n\n⚡ *OGGY-MD SYSTEM*"
     }, { quoted: message.data });
 
     if (waitMsg && waitMsg.key) await message.client.sendMessage(message.jid, { delete: waitMsg.key });
@@ -84,7 +62,7 @@ Module(
   {
     pattern: "^[.]?(fb|facebook|fbvideo|fbreel|video)(?:\\s+(.*))?$",
     fromMe: isFromMe,
-    desc: "Download High Quality Facebook Videos & Reels",
+    desc: "Download High Quality Facebook Videos, Reels & Photos",
     use: "download",
   },
   async (message, match) => {
@@ -94,6 +72,7 @@ Module(
     if (!query) query = getReplyText(message);
     query = String(query).trim();
 
+    // Prevent clashing with other platforms if they use 'video'
     if (query.match(/youtu|instagram|instagr\.am|tiktok|twitter|x\.com|snapchat|spotify|pinterest|pin\.it|threads/i)) return;
 
     const targetUrl = extractUrl(query);
